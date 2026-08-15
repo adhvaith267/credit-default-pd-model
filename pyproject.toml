@@ -11,9 +11,6 @@ dependencies = [
     "boto3>=1.43.72",
 ]
 
-[project.scripts]
-financial-risk-analyst-ml = "financial_risk_analyst_ml:main"
-
 [build-system]
 requires = ["uv_build>=0.12.5,<0.13.0"]
 build-backend = "uv_build"
