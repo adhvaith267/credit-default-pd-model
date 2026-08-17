@@ -274,7 +274,7 @@ uv run python scripts/train_sagemaker.py \
 
 ```bash
 uv run python scripts/deploy_sagemaker.py \
-  --model-artifact s3://financial-risk-analyst-adhvaith-2026/models/gmsc/.../model.tar.gz
+  --model-artifact s3://your_dataset_s3_bucket/models/gmsc/.../model.tar.gz
 ```
 
 **Test the endpoint:**
