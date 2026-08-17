@@ -1,4 +1,6 @@
+<div align="center">
 # financial-risk-analyst-ml
+Probability of Default (PD) machine learning subsystem for the Financial Risk Analyst credit engine. Trains, evaluates, calibrates, and serves a borrower-level PD model on AWS SageMaker.
 
 ![Python](https://img.shields.io/badge/Python-3.11-blue?logo=python&logoColor=white)
 ![AWS SageMaker](https://img.shields.io/badge/AWS-SageMaker-orange?logo=amazonaws&logoColor=white)
@@ -9,8 +11,7 @@
 ![Optuna](https://img.shields.io/badge/Tuning-Optuna-lightgrey)
 ![License](https://img.shields.io/badge/License-MIT-lightgrey)
 
-Probability of Default (PD) machine learning subsystem for the Financial Risk Analyst credit engine. Trains, evaluates, calibrates, and serves a borrower-level PD model on AWS SageMaker.
-
+<div/>
 ---
 
 ## Project Context
@@ -66,10 +67,6 @@ This repository is solely responsible for the **PD** component. All downstream b
 | Missing values | MonthlyIncome (19.8%), NumberOfDependents (2.6%) |
 
 The dataset is stored in S3 and is not committed to this repository.
-
-```
-s3://financial-risk-analyst-adhvaith-2026/datasets/gmsc/raw/cs-training.csv
-```
 
 ---
 
@@ -220,10 +217,6 @@ SageMaker Endpoint
 Backend Service
 ```
 
-IAM role: `FinancialRiskSageMakerExecutionRole`
-S3 bucket: `financial-risk-analyst-adhvaith-2026`
-Default region: `ap-south-1`
-
 ---
 
 ## Repository Structure
@@ -276,20 +269,6 @@ uv run pytest tests/ -v
 
 ```bash
 uv run --with pandas --with numpy --with scikit-learn pytest tests/ -v
-```
-
-**Run a local training job:**
-
-```bash
-uv run \
-  --with pandas --with numpy --with scikit-learn \
-  --with xgboost --with lightgbm --with shap --with optuna \
-  python -m financial_risk_analyst_ml.train \
-    --data-path /path/to/cs-training.csv \
-    --model-dir /tmp/model-output \
-    --model all \
-    --tune \
-    --tune-trials 50
 ```
 
 ---
