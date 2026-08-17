@@ -1,118 +1,43 @@
-# =============================================================================
 # Python
-# =============================================================================
 __pycache__/
 *.py[oc]
-*.pyo
-*.pyd
-*.pyw
-*.pyz
-build/
-dist/
-wheels/
 *.egg-info/
-*.egg
-.eggs/
-MANIFEST
 
-# =============================================================================
-# Virtual environments
-# =============================================================================
+# Virtual environment
 .venv/
-venv/
-env/
-ENV/
 
-# =============================================================================
-# uv
-# =============================================================================
-# uv.lock is intentionally tracked — do NOT add it here
+# uv.lock is intentionally tracked
 
-# =============================================================================
-# Testing
-# =============================================================================
+# Tests
 .pytest_cache/
 .coverage
-.coverage.*
-htmlcov/
-coverage.xml
-*.cover
-nosetests.xml
-test-results/
 
-# =============================================================================
-# Model artifacts and data
-# =============================================================================
-# Datasets never belong in Git — they live in S3
+# Datasets — stored in S3, never in Git
 data/
-*.csv
-*.xls
-*.xlsx
-*.parquet
-*.feather
-*.h5
-*.hdf5
+datasets/
 
-# Trained model artifacts — these live in S3
+# Model artifacts — stored in S3, never in Git
 models/
 *.joblib
 *.pkl
 *.pickle
-*.pt
-*.pth
-*.onnx
 model.tar.gz
 
-# Local training output directories
+# Local training output
 /tmp/
 
-# =============================================================================
-# Jupyter notebooks
-# =============================================================================
-.ipynb_checkpoints/
-*.ipynb
-
-# =============================================================================
-# AWS credentials and config — never commit these
-# =============================================================================
-.aws/
-credentials
-*.pem
-*.key
-
-# =============================================================================
-# Environment variable files
-# =============================================================================
+# Environment variables
 .env
 .env.*
-*.env
 !.env.example
 
-# =============================================================================
-# IDE and editor files
-# =============================================================================
+# IDE
 .vscode/
 .idea/
-*.swp
-*.swo
-*~
-.DS_Store
-Thumbs.db
 
-# =============================================================================
-# Logs and local run output
-# =============================================================================
+# Logs
 *.log
 logs/
-output/
-evaluation/
 
-# =============================================================================
-# OS files
-# =============================================================================
+# OS
 .DS_Store
-.DS_Store?
-._*
-.Spotlight-V100
-.Trashes
-ehthumbs.db
