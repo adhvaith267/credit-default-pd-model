@@ -1,4 +1,5 @@
 <div align="center">
+
 # financial-risk-analyst-ml
 Probability of Default (PD) machine learning subsystem for the Financial Risk Analyst credit engine. Trains, evaluates, calibrates, and serves a borrower-level PD model on AWS SageMaker.
 
@@ -11,7 +12,7 @@ Probability of Default (PD) machine learning subsystem for the Financial Risk An
 ![Optuna](https://img.shields.io/badge/Tuning-Optuna-lightgrey)
 ![License](https://img.shields.io/badge/License-MIT-lightgrey)
 
-<div/>
+</div>
 ---
 
 ## Project Context
