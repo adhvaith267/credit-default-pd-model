@@ -1,7 +1,8 @@
 <div align="center">
 
-# Probability of Default ML model
-Probability of Default (PD) machine learning subsystem for the Financial Risk Analyst credit engine. Trains, evaluates, calibrates, and serves a borrower-level PD model on AWS SageMaker.
+# credit-default-pd-model
+
+A machine learning model that predicts the Probability of Default (PD) for individual borrowers, trained on the Give Me Some Credit dataset using LightGBM with Optuna hyperparameter tuning and deployed on AWS SageMaker.
 
 ![Python](https://img.shields.io/badge/Python-3.11-blue?logo=python&logoColor=white)
 ![AWS SageMaker](https://img.shields.io/badge/AWS-SageMaker-orange?logo=amazonaws&logoColor=white)
@@ -16,45 +17,29 @@ Probability of Default (PD) machine learning subsystem for the Financial Risk An
 
 ---
 
-## Project Context
+## Overview
 
-This repository is the ML subsystem of a larger **Financial Risk Analyst** platform — a credit analysis engine that computes risk metrics for individual borrowers and supports automated credit decision workflows.
+This repository implements a **Probability of Default (PD) model** — a binary classifier that estimates the likelihood a borrower will experience serious credit delinquency within two years. It covers the full ML lifecycle: data preprocessing, feature engineering, model training, hyperparameter tuning, calibration, explainability, and real-time inference via AWS SageMaker.
 
-The broader system is split into two independently deployable components:
+This model is one subsystem of a larger **Financial Analyst AI** platform. The broader platform performs end-to-end credit analysis for individual borrowers. This repository is responsible solely for producing a calibrated PD score. All other credit engine logic lives in the backend service.
 
 ```
-Backend Service
-  - REST API
-  - Business rules and credit decisions
-  - LGD (Loss Given Default)
-  - EAD (Exposure at Default)
+Financial Analyst AI  (backend service)
+  - REST API and credit decision workflows
+  - Loss Given Default (LGD)
+  - Exposure at Default (EAD)
   - Expected Loss = PD x LGD x EAD
-  - Risk band assignment
+  - Risk band assignment and business rules
         |
-        | calls SageMaker endpoint
+        | requests PD for a borrower
         v
-ML Subsystem (this repository)
-  - Probability of Default (PD)
-  - Feature engineering
-  - Model training and calibration
-  - Hosted on SageMaker
+credit-default-pd-model  (this repository)
+  - Probability of Default inference
+  - Preprocessing and feature engineering
+  - Hosted on AWS SageMaker real-time endpoint
 ```
 
-This repository is solely responsible for the **PD** component. All downstream business logic remains in the backend service.
-
----
-
-## What This Repository Does
-
-1. Trains a binary classification model on the Give Me Some Credit (GMSC) dataset — 150,000 labelled borrower records from Kaggle — to predict the probability that a borrower experiences serious delinquency within two years.
-
-2. Applies deterministic feature engineering, learned preprocessing (median imputation, quantile clipping, robust scaling), and isotonic calibration so that the model outputs well-calibrated probabilities suitable for use in Expected Loss calculations.
-
-3. Packages the trained model, preprocessor, and calibrator as a SageMaker-compatible artifact and deploys it to a real-time inference endpoint.
-
-4. Exposes a JSON inference API that the backend calls with raw borrower features and receives a calibrated PD in return.
-
----
+The output of this model — a single calibrated probability between 0 and 1 — feeds directly into the Expected Loss calculation in the backend. Well-calibrated probabilities are therefore a hard requirement, not an optional enhancement.
 
 ## Dataset
 
