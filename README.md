@@ -1,6 +1,6 @@
 <div align="center">
 
-# Financial risk analyst (ML Model)
+# Probability of Default ML model
 Probability of Default (PD) machine learning subsystem for the Financial Risk Analyst credit engine. Trains, evaluates, calibrates, and serves a borrower-level PD model on AWS SageMaker.
 
 ![Python](https://img.shields.io/badge/Python-3.11-blue?logo=python&logoColor=white)
