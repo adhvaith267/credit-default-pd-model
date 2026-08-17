@@ -3,7 +3,7 @@ deploy_sagemaker.py — Deploy a trained GMSC PD model to a SageMaker endpoint.
 
 Usage:
     uv run python scripts/deploy_sagemaker.py \
-        --model-artifact s3://financial-risk-analyst-adhvaith-2026/models/gmsc/.../model.tar.gz
+        --model-artifact s3://YOUR-BUCKET/models/gmsc/.../model.tar.gz
 
 What this does:
     1. Creates a SageMaker Model from the artifact and inference.py script.
@@ -59,7 +59,7 @@ def parse_args() -> argparse.Namespace:
         help=(
             "S3 URI of the model artifact (model.tar.gz) produced by "
             "train_sagemaker.py, e.g. "
-            "s3://financial-risk-analyst-adhvaith-2026/models/gmsc/.../output/model.tar.gz"
+            "s3://YOUR-BUCKET/models/gmsc/.../output/model.tar.gz"
         ),
     )
     parser.add_argument(

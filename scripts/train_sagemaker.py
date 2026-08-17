@@ -11,10 +11,10 @@ What this does:
     3. Waits for the job to complete and prints the model artifact S3 URI.
 
 The training job reads data from:
-    s3://financial-risk-analyst-adhvaith-2026/datasets/gmsc/raw/cs-training.csv
+    s3://YOUR-BUCKET/datasets/gmsc/raw/cs-training.csv
 
 And writes model artifacts to:
-    s3://financial-risk-analyst-adhvaith-2026/models/gmsc/<job-name>/output/model.tar.gz
+    s3://YOUR-BUCKET/models/gmsc/<job-name>/output/model.tar.gz
 """
 
 from __future__ import annotations
