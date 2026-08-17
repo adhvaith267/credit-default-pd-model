@@ -8,6 +8,8 @@ from sklearn.impute import SimpleImputer
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import RobustScaler
 
+from financial_risk_analyst_ml.features import add_gmsc_features
+
 
 ID_COLUMNS = [
     "Unnamed: 0",
@@ -16,6 +18,7 @@ ID_COLUMNS = [
 TARGET_COLUMN = "SeriousDlqin2yrs"
 
 NUMERIC_FEATURES = [
+    # Raw features
     "RevolvingUtilizationOfUnsecuredLines",
     "age",
     "NumberOfTime30-59DaysPastDueNotWorse",
@@ -26,6 +29,15 @@ NUMERIC_FEATURES = [
     "NumberRealEstateLoansOrLines",
     "NumberOfTime60-89DaysPastDueNotWorse",
     "NumberOfDependents",
+    # Engineered features
+    "MonthlyIncome_missing",
+    "NumberOfDependents_missing",
+    "TotalDelinquencyCount",
+    "HasDelinquency",
+    "SevereDelinquency",
+    "RealEstateLoanRatio",
+    "IncomePerCreditLineLoan",
+    "PercentageTimePastDue",
 ]
 
 
@@ -51,7 +63,10 @@ class GMSCDataCleaner(BaseEstimator, TransformerMixin):
         if "age" in X.columns:
             X.loc[X["age"] <= 0, "age"] = np.nan
 
-        # Ensure expected numeric columns exist.
+        # Add engineered features (deterministic, no data leakage).
+        X = add_gmsc_features(X)
+
+        # Ensure all expected columns are present.
         missing_columns = [
             column for column in NUMERIC_FEATURES
             if column not in X.columns
