@@ -1,10 +1,14 @@
-pandas
-numpy
-scikit-learn
-xgboost
-lightgbm
-optuna
-shap
-joblib
-openpyxl
-xlrd
+# Requirements installed into the SageMaker SKLearn 1.2-1 container (Python 3.9).
+#
+# The container ships: numpy 1.23.x, scipy 1.10.x, scikit-learn 1.2.1, pandas 1.5.x.
+# We pin only what is NOT already present or needs upgrading.
+#
+# numba/llvmlite are pinned to match the numpy in the container: shap pulls in
+# numba, and numba 0.60+ requires numpy >=2.0 which is not present in this image.
+
+xgboost==2.1.4
+lightgbm==4.6.0
+optuna==4.9.0
+numba==0.57.1
+llvmlite==0.40.1
+shap==0.44.1

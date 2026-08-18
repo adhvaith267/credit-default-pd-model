@@ -1,14 +1,15 @@
 [project]
 name = "financial-risk-analyst-ml"
 version = "0.1.0"
-description = "Add your description here"
+description = "Probability-of-default (PD) model for the Give Me Some Credit dataset, with SageMaker training and serving."
 readme = "README.md"
 authors = [
     { name = "adhvaith267", email = "adhvaith.gv@gmail.com" }
 ]
 requires-python = ">=3.11"
 dependencies = [
-    "boto3>=1.43.72",
+    "sagemaker>=2.231.0,<3.0.0",
+    "botocore[crt]>=1.43.72",
 ]
 
 [build-system]

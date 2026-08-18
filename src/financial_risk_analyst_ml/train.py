@@ -53,6 +53,8 @@ from financial_risk_analyst_ml.models import (
     build_logistic_model,
     build_xgboost_model,
     build_lightgbm_model,
+    XGBClassifier,
+    LGBMClassifier,
 )
 from financial_risk_analyst_ml.preprocessing import (
     build_preprocessing_pipeline,
@@ -75,6 +77,18 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Argument parsing
 # ---------------------------------------------------------------------------
+
+def _str_to_bool(value: str | bool) -> bool:
+    """Parse bool CLI values; SageMaker passes hyperparameters as strings."""
+    if isinstance(value, bool):
+        return value
+    normalized = value.lower()
+    if normalized in ("true", "1", "yes"):
+        return True
+    if normalized in ("false", "0", "no"):
+        return False
+    raise argparse.ArgumentTypeError(f"Invalid boolean value: {value}")
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
@@ -115,8 +129,10 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--tune",
-        action="store_true",
+        nargs="?",
+        const=True,
         default=False,
+        type=_str_to_bool,
         help=(
             "Run Optuna hyperparameter tuning for XGBoost and LightGBM "
             "before final training. Adds ~5-10 min on a CPU instance."
@@ -238,6 +254,16 @@ def train_and_evaluate(args: argparse.Namespace) -> None:
     y_val_arr = y_val.to_numpy()
     y_test_arr = y_test.to_numpy()
 
+    # Compute class imbalance ratio from training labels.
+    # XGBoost uses this as scale_pos_weight = n_negative / n_positive.
+    n_pos = int(y_train_arr.sum())
+    n_neg = len(y_train_arr) - n_pos
+    scale_pos_weight = n_neg / max(n_pos, 1)  # guard against zero division
+    logger.info(
+        "Class distribution — train: %d pos, %d neg (scale_pos_weight=%.2f)",
+        n_pos, n_neg, scale_pos_weight,
+    )
+
     # ------------------------------------------------------------------
     # 3. Optional Optuna tuning
     # Tuning uses X_train/X_val only — no test data exposure.
@@ -255,6 +281,7 @@ def train_and_evaluate(args: argparse.Namespace) -> None:
                 X_val, y_val_arr,
                 n_trials=args.tune_trials,
                 random_state=args.random_state,
+                scale_pos_weight=scale_pos_weight,
             )
 
         if args.model in ("lightgbm", "all"):
@@ -281,11 +308,11 @@ def train_and_evaluate(args: argparse.Namespace) -> None:
 
     if args.model in ("xgboost", "all"):
         logger.info("Training XGBoost%s...", " (tuned)" if xgb_params else "")
-        if xgb_params:
-            from xgboost import XGBClassifier
-            xgb_model = XGBClassifier(**xgb_params)
-        else:
-            xgb_model = build_xgboost_model()
+        xgb_model = (
+            XGBClassifier(**xgb_params)
+            if xgb_params
+            else build_xgboost_model(scale_pos_weight=scale_pos_weight)
+        )
         xgb_model.fit(
             X_train, y_train_arr,
             eval_set=[(X_val, y_val_arr)],
@@ -295,15 +322,10 @@ def train_and_evaluate(args: argparse.Namespace) -> None:
 
     if args.model in ("lightgbm", "all"):
         logger.info("Training LightGBM%s...", " (tuned)" if lgb_params else "")
-        if lgb_params:
-            from lightgbm import LGBMClassifier
-            lgb_model = LGBMClassifier(**lgb_params)
-        else:
-            lgb_model = build_lightgbm_model()
+        lgb_model = LGBMClassifier(**lgb_params) if lgb_params else build_lightgbm_model()
         lgb_model.fit(
             X_train, y_train_arr,
-            eval_X=X_val,
-            eval_y=y_val_arr,
+            eval_set=[(X_val, y_val_arr)],
         )
         models_to_train.append(("lightgbm", lgb_model))
 

@@ -1,17 +1,23 @@
 """
-deploy_sagemaker.py — Deploy a trained GMSC PD model to a SageMaker endpoint.
+deploy_sagemaker.py — Deploy the trained GMSC PD model to a SageMaker endpoint.
+
+Uses the SageMaker v2 SDK with the SKLearnModel class.
 
 Usage:
-    uv run python scripts/deploy_sagemaker.py \
-        --model-artifact s3://YOUR-BUCKET/models/gmsc/.../model.tar.gz
+    # Deploy from the latest training job artifact:
+    uv run python scripts/deploy_sagemaker.py
 
-What this does:
-    1. Creates a SageMaker Model from the artifact and inference.py script.
-    2. Creates an endpoint configuration.
-    3. Creates or updates the endpoint.
-    4. Waits for the endpoint to be InService.
+    # Deploy a specific model artifact:
+    uv run python scripts/deploy_sagemaker.py \\
+        --model-artifact s3://financial-risk-analyst-adhvaith-2026/models/gmsc/<job>/output/model.tar.gz
 
-The endpoint name defaults to 'gmsc-pd-endpoint'.
+    # Custom instance type and endpoint name:
+    uv run python scripts/deploy_sagemaker.py \\
+        --instance-type ml.m5.xlarge \\
+        --endpoint-name my-custom-endpoint
+
+Endpoint created/updated:
+    gmsc-pd-endpoint  (default)
 """
 
 from __future__ import annotations
@@ -25,16 +31,12 @@ import boto3
 import sagemaker
 from sagemaker.sklearn.model import SKLearnModel
 
-# ---------------------------------------------------------------------------
-# Configuration
-# ---------------------------------------------------------------------------
+sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
+from financial_risk_analyst_ml.config import CONFIG  # noqa: E402
 
-ROLE_NAME = "FinancialRiskSageMakerExecutionRole"
-ENDPOINT_NAME = "gmsc-pd-endpoint"
-SOURCE_DIR = str(Path(__file__).parent.parent / "src")
+PROJECT_ROOT = Path(__file__).parent.parent
+SOURCE_DIR = str(PROJECT_ROOT / "src")
 ENTRY_POINT = "financial_risk_analyst_ml/inference.py"
-SKLEARN_VERSION = "1.2-1"
-PYTHON_VERSION = "py3"
 
 logging.basicConfig(
     level=logging.INFO,
@@ -45,51 +47,70 @@ logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
-# Argument parsing
+# Helpers
 # ---------------------------------------------------------------------------
 
+def get_execution_role_arn(role_name: str, region: str) -> str:
+    """Resolve an IAM role name to its full ARN."""
+    iam = boto3.client("iam", region_name=region)
+    return iam.get_role(RoleName=role_name)["Role"]["Arn"]
+
+
+def get_latest_model_artifact(bucket: str, prefix: str, region: str) -> str:
+    """
+    Return the S3 URI of the most recently uploaded model.tar.gz under prefix.
+
+    Raises RuntimeError if no artifact is found.
+    """
+    s3 = boto3.client("s3", region_name=region)
+    paginator = s3.get_paginator("list_objects_v2")
+
+    all_objects = []
+    for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
+        all_objects.extend(page.get("Contents", []))
+
+    models = [obj for obj in all_objects if obj["Key"].endswith("model.tar.gz")]
+
+    if not models:
+        raise RuntimeError(
+            f"No model.tar.gz found at s3://{bucket}/{prefix}. "
+            "Run train_sagemaker.py first."
+        )
+
+    latest = max(models, key=lambda x: x["LastModified"])
+    uri = f"s3://{bucket}/{latest['Key']}"
+    logger.info("Latest model artifact: %s (modified %s)", uri, latest["LastModified"])
+    return uri
+
+
 def parse_args() -> argparse.Namespace:
+    """Parse command-line arguments."""
     parser = argparse.ArgumentParser(
-        description="Deploy a trained GMSC PD model to a SageMaker endpoint."
+        description="Deploy the GMSC PD model to a SageMaker endpoint."
     )
     parser.add_argument(
         "--model-artifact",
         type=str,
-        required=True,
-        help=(
-            "S3 URI of the model artifact (model.tar.gz) produced by "
-            "train_sagemaker.py, e.g. "
-            "s3://YOUR-BUCKET/models/gmsc/.../output/model.tar.gz"
-        ),
+        default=None,
+        help="S3 URI of model.tar.gz (default: latest from training jobs).",
     )
     parser.add_argument(
         "--endpoint-name",
         type=str,
-        default=ENDPOINT_NAME,
-        help=f"SageMaker endpoint name (default: {ENDPOINT_NAME}).",
+        default=CONFIG.endpoint_name,
+        help=f"Endpoint name (default: {CONFIG.endpoint_name}).",
     )
     parser.add_argument(
         "--instance-type",
         type=str,
-        default="ml.t2.medium",
-        help="Inference instance type (default: ml.t2.medium).",
+        default="ml.m5.xlarge",
+        help="Inference instance type (default: ml.m5.xlarge).",
     )
     parser.add_argument(
         "--instance-count",
         type=int,
         default=1,
         help="Number of inference instances (default: 1).",
-    )
-    parser.add_argument(
-        "--region",
-        type=str,
-        default="ap-south-1",
-    )
-    parser.add_argument(
-        "--model-version",
-        type=str,
-        default="gmsc-xgb-v1",
-        help="Model version tag embedded in predictions.",
     )
     return parser.parse_args()
 
@@ -99,56 +120,48 @@ def parse_args() -> argparse.Namespace:
 # ---------------------------------------------------------------------------
 
 def main() -> None:
+    """Deploy the model to a SageMaker real-time endpoint."""
     args = parse_args()
 
-    # Resolve IAM role ARN.
-    iam = boto3.client("iam", region_name=args.region)
-    role_arn = iam.get_role(RoleName=ROLE_NAME)["Role"]["Arn"]
+    role_arn = get_execution_role_arn(CONFIG.role_name, CONFIG.region)
     logger.info("Using IAM role: %s", role_arn)
 
-    # SageMaker session.
-    boto_session = boto3.Session(region_name=args.region)
-    sm_session = sagemaker.Session(boto_session=boto_session)
+    sess = sagemaker.Session(boto_session=boto3.Session(region_name=CONFIG.region))
 
-    logger.info("Creating SageMaker model from artifact: %s", args.model_artifact)
+    model_data = (
+        args.model_artifact
+        or get_latest_model_artifact(CONFIG.bucket, CONFIG.model_prefix, CONFIG.region)
+    )
+    logger.info("Deploying model artifact: %s", model_data)
 
-    # Create the model object.
-    # SageMaker will serve requests using inference.py's four handler functions.
     model = SKLearnModel(
-        model_data=args.model_artifact,
+        model_data=model_data,
         role=role_arn,
         entry_point=ENTRY_POINT,
         source_dir=SOURCE_DIR,
-        framework_version=SKLEARN_VERSION,
-        py_version=PYTHON_VERSION,
-        sagemaker_session=sm_session,
-        env={
-            "MODEL_VERSION": args.model_version,
-        },
-        dependencies=[
-            str(Path(__file__).parent.parent / "sagemaker" / "requirements.txt")
-        ],
+        framework_version="1.2-1",
+        py_version="py3",
+        sagemaker_session=sess,
+        dependencies=[str(PROJECT_ROOT / "sagemaker" / "requirements.txt")],
     )
 
     logger.info(
-        "Deploying to endpoint '%s' on %s × %d...",
+        "Deploying to endpoint '%s' (instance=%s, count=%d)...",
         args.endpoint_name,
         args.instance_type,
         args.instance_count,
     )
 
     predictor = model.deploy(
-        initial_instance_count=args.instance_count,
-        instance_type=args.instance_type,
         endpoint_name=args.endpoint_name,
+        instance_type=args.instance_type,
+        initial_instance_count=args.instance_count,
         wait=True,
     )
 
-    logger.info("Endpoint is InService: %s", args.endpoint_name)
-    print(f"\nEndpoint deployed successfully:")
-    print(f"  Name:   {args.endpoint_name}")
-    print(f"  Region: {args.region}")
-    print(f"  URL:    https://runtime.sagemaker.{args.region}.amazonaws.com/endpoints/{args.endpoint_name}/invocations")
+    logger.info("Deployment complete!")
+    logger.info("Endpoint name: %s", predictor.endpoint_name)
+    logger.info("Test with: uv run python scripts/invoke_endpoint.py")
 
 
 if __name__ == "__main__":

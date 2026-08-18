@@ -65,10 +65,6 @@ import numpy as np
 import pandas as pd
 
 from financial_risk_analyst_ml.calibration import calibrate_probabilities
-from financial_risk_analyst_ml.preprocessing import (
-    build_preprocessing_pipeline,
-    NUMERIC_FEATURES,
-)
 
 
 logger = logging.getLogger(__name__)

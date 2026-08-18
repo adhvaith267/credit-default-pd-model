@@ -2,8 +2,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from sklearn.base import BaseEstimator, ClassifierMixin, clone
-from sklearn.calibration import CalibratedClassifierCV
+from sklearn.base import BaseEstimator
 from sklearn.isotonic import IsotonicRegression
 from sklearn.linear_model import LogisticRegression
 

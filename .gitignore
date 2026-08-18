@@ -15,6 +15,7 @@ __pycache__/
 # Datasets — stored in S3, never in Git
 data/
 datasets/
+*.csv
 
 # Model artifacts — stored in S3, never in Git
 models/

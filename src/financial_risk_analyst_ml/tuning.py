@@ -22,11 +22,14 @@ import logging
 
 import numpy as np
 import optuna
+from lightgbm import LGBMClassifier
 from sklearn.metrics import roc_auc_score
 from xgboost import XGBClassifier
-from lightgbm import LGBMClassifier
 
 logger = logging.getLogger(__name__)
+
+# Approximate class imbalance ratio from the full GMSC dataset (93 % / 7 %).
+_SCALE_POS_WEIGHT = 139_974 / 10_026
 
 # Suppress Optuna's per-trial output — we log a summary at the end instead.
 optuna.logging.set_verbosity(optuna.logging.WARNING)
@@ -43,6 +46,7 @@ def tune_xgboost(
     y_val: np.ndarray,
     n_trials: int = 50,
     random_state: int = 42,
+    scale_pos_weight: float | None = None,
 ) -> dict:
     """
     Search for the best XGBoost hyperparameters using Optuna.
@@ -59,14 +63,19 @@ def tune_xgboost(
         preprocessing — no leakage).
     n_trials:
         Number of Optuna trials. 50 gives a good balance of coverage
-        vs. runtime on this dataset (~2–3 minutes on a CPU instance).
+        vs. runtime on a CPU instance (~2–3 minutes).
     random_state:
         Seed for reproducibility.
+    scale_pos_weight:
+        Ratio of negative to positive training samples (``n_neg / n_pos``).
+        Defaults to the GMSC population constant when not provided.
 
     Returns
     -------
     dict of best hyperparameters (ready to pass to XGBClassifier(**params)).
     """
+
+    _spw = scale_pos_weight if scale_pos_weight is not None else _SCALE_POS_WEIGHT
 
     def objective(trial: optuna.Trial) -> float:
         params = {
@@ -79,7 +88,7 @@ def tune_xgboost(
             "gamma": trial.suggest_float("gamma", 0.0, 1.0),
             "reg_alpha": trial.suggest_float("reg_alpha", 1e-4, 10.0, log=True),
             "reg_lambda": trial.suggest_float("reg_lambda", 1e-4, 10.0, log=True),
-            "scale_pos_weight": 139974 / 10026,
+            "scale_pos_weight": _spw,
             "objective": "binary:logistic",
             "eval_metric": "logloss",
             "random_state": random_state,
@@ -102,17 +111,17 @@ def tune_xgboost(
     )
     study.optimize(objective, n_trials=n_trials, show_progress_bar=False)
 
-    best = study.best_params
     logger.info(
         "XGBoost tuning complete — best ROC-AUC=%.4f after %d trials",
         study.best_value,
         n_trials,
     )
-    logger.info("Best XGBoost params: %s", best)
+    logger.info("Best XGBoost params: %s", study.best_params)
 
-    # Add back the fixed params the objective doesn't expose.
+    best = study.best_params
+    # Add back the fixed params the objective doesn't expose to the search space.
     best.update({
-        "scale_pos_weight": 139974 / 10026,
+        "scale_pos_weight": _spw,
         "objective": "binary:logistic",
         "eval_metric": "logloss",
         "random_state": random_state,
@@ -178,8 +187,7 @@ def tune_lightgbm(
         model = LGBMClassifier(**params)
         model.fit(
             X_train, y_train,
-            eval_X=X_val,
-            eval_y=y_val,
+            eval_set=[(X_val, y_val)],
         )
 
         y_prob = model.predict_proba(X_val)[:, 1]
@@ -191,14 +199,14 @@ def tune_lightgbm(
     )
     study.optimize(objective, n_trials=n_trials, show_progress_bar=False)
 
-    best = study.best_params
     logger.info(
         "LightGBM tuning complete — best ROC-AUC=%.4f after %d trials",
         study.best_value,
         n_trials,
     )
-    logger.info("Best LightGBM params: %s", best)
+    logger.info("Best LightGBM params: %s", study.best_params)
 
+    best = study.best_params
     # Add back fixed params.
     best.update({
         "subsample_freq": 1,
