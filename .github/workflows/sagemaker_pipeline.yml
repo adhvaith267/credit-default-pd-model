@@ -1,0 +1,65 @@
+name: SageMaker ML Pipeline
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'Action to perform'
+        required: true
+        default: 'train_and_deploy'
+        type: choice
+        options:
+          - 'train_and_deploy'
+          - 'train_only'
+          - 'deploy_only'
+      tune:
+        description: 'Enable Optuna hyperparameter tuning'
+        required: true
+        default: true
+        type: boolean
+
+jobs:
+  sagemaker-pipeline:
+    runs-on: ubuntu-latest
+
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+
+      - name: Install Dependencies
+        run: uv sync
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ap-south-1
+          # Recommend setting AWS_ROLE_TO_ASSUME or AWS_ACCESS_KEY_ID / SECRET in GitHub Secrets
+          # aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          # aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+
+      - name: Run SageMaker Training
+        if: ${{ inputs.action == 'train_and_deploy' || inputs.action == 'train_only' }}
+        run: |
+          if [ "${{ inputs.tune }}" = "false" ]; then
+            uv run python scripts/train_sagemaker.py --no-tune
+          else
+            uv run python scripts/train_sagemaker.py
+          fi
+
+      - name: Deploy SageMaker Endpoint
+        if: ${{ inputs.action == 'train_and_deploy' || inputs.action == 'deploy_only' }}
+        run: uv run python scripts/deploy_sagemaker.py

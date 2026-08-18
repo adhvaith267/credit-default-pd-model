@@ -179,6 +179,18 @@ Train and evaluate models locally. If `./cs-training.csv` is not present locally
 uv run python -m financial_risk_analyst_ml.train --data-path cs-training.csv --model all --tune --tune-trials 50
 ```
 
+### Quick Commands (Makefile Shortcuts)
+
+You can use the included `Makefile` for short, memorable commands:
+
+| Task | Command | Standard Equivalent |
+|---|---|---|
+| **Submit Full Training Job** | `make train` | `uv run python scripts/train_sagemaker.py` |
+| **Submit Fast Training Job** | `make train-fast` | `uv run python scripts/train_sagemaker.py --no-tune` |
+| **Deploy Endpoint** | `make deploy` | `uv run python scripts/deploy_sagemaker.py` |
+| **Test Live Endpoint** | `make invoke` | `uv run python scripts/invoke_endpoint.py --pretty` |
+| **Run Unit Tests** | `make test` | `uv run pytest tests/ -v` |
+
 ---
 
 ## AWS SageMaker Deployment Workflow
@@ -193,24 +205,24 @@ Submits a managed spot training job (`ml.m5.xlarge`) to AWS SageMaker:
 
 ```bash
 # Full Optuna tuning job (~70% cost savings via spot instances)
-uv run python scripts/train_sagemaker.py
+make train
 
 # Quick execution without hyperparameter tuning (~2-3 mins)
-uv run python scripts/train_sagemaker.py --no-tune
+make train-fast
 ```
 
 ### Step 2: Deploy to SageMaker Real-Time Endpoint
 Deploys the trained `model.tar.gz` from S3 to a real-time SageMaker endpoint (`gmsc-pd-endpoint`):
 
 ```bash
-uv run python scripts/deploy_sagemaker.py
+make deploy
 ```
 
 ### Step 3: Invoke & Validate the Live Endpoint
 Sends a sample borrower payload to the live endpoint to verify inference latency and output structure:
 
 ```bash
-uv run python scripts/invoke_endpoint.py --pretty
+make invoke
 ```
 
 **Sample Request Payload:**
