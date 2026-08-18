@@ -29,7 +29,7 @@ from financial_risk_analyst_ml.config import CONFIG  # noqa: E402
 
 PROJECT_ROOT = Path(__file__).parent.parent
 SOURCE_DIR = str(PROJECT_ROOT / "src")
-ENTRY_POINT = "financial_risk_analyst_ml/inference.py"
+ENTRY_POINT = "inference.py"
 
 logging.basicConfig(
     level=logging.INFO,
