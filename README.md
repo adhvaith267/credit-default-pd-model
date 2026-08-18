@@ -247,7 +247,3 @@ uv run python scripts/invoke_endpoint.py --pretty
 3. **Container Compatibility**: Pinned dependencies and compatibility fixes ensure seamless execution across local Python 3.11 environments and AWS SageMaker Python 3.9 containers.
 
 ---
-
-## License
-
-Distributed under the MIT License. See `LICENSE` for details.
