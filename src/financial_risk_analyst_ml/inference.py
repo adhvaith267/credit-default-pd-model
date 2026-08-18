@@ -64,6 +64,35 @@ import joblib
 import numpy as np
 import pandas as pd
 
+import sys
+import types
+
+# Ensure code directories are in sys.path
+current_dir = Path(__file__).parent
+parent_dir = current_dir.parent
+if str(parent_dir) not in sys.path:
+    sys.path.insert(0, str(parent_dir))
+if str(current_dir) not in sys.path:
+    sys.path.insert(0, str(current_dir))
+
+# Support both package and flat directory unpickling for joblib
+try:
+    import financial_risk_analyst_ml.preprocessing as preprocessing
+    import financial_risk_analyst_ml.features as features
+    import financial_risk_analyst_ml.calibration as calibration
+except ImportError:
+    import preprocessing
+    import features
+    import calibration
+    pkg = types.ModuleType("financial_risk_analyst_ml")
+    pkg.preprocessing = preprocessing
+    pkg.features = features
+    pkg.calibration = calibration
+    sys.modules["financial_risk_analyst_ml"] = pkg
+    sys.modules["financial_risk_analyst_ml.preprocessing"] = preprocessing
+    sys.modules["financial_risk_analyst_ml.features"] = features
+    sys.modules["financial_risk_analyst_ml.calibration"] = calibration
+
 try:
     from financial_risk_analyst_ml.calibration import calibrate_probabilities
 except ImportError:
