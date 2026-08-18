@@ -2,7 +2,7 @@
 
 # credit-default-pd-model
 
-An enterprise-grade machine learning pipeline for predicting borrower Probability of Default (PD) on the Give Me Some Credit (GMSC) dataset, featuring Optuna hyperparameter tuning, isotonic probability calibration, SHAP explainability, and real-time AWS SageMaker deployment.
+A machine learning pipeline for predicting borrower Probability of Default (PD) on the Give Me Some Credit (GMSC) dataset, featuring Optuna hyperparameter tuning, isotonic probability calibration, SHAP explainability, and real-time AWS SageMaker deployment.
 
 ![Python](https://img.shields.io/badge/Python-3.11-blue?logo=python&logoColor=white)
 ![AWS SageMaker](https://img.shields.io/badge/AWS-SageMaker-orange?logo=amazonaws&logoColor=white)
