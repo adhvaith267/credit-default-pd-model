@@ -216,10 +216,9 @@ financial-risk-analyst-ml/
 |   |-- inference.py        SageMaker real-time inference handler
 |
 |-- scripts/
-|   |-- download_data.py    Download GMSC dataset from S3 for local training
-|   |-- train_sagemaker.py  Submit SageMaker training job
-|   |-- deploy_sagemaker.py Deploy model artifact to SageMaker real-time endpoint
-|   |-- invoke_endpoint.py  Test live SageMaker endpoint with sample payload
+|   |-- train_sagemaker.py     Submit SageMaker training job
+|   |-- deploy_sagemaker.py    Deploy model artifact to SageMaker real-time endpoint
+|   |-- invoke_endpoint.py     Test live SageMaker endpoint with sample payload
 |
 |-- sagemaker/
 |   |-- requirements.txt    Dependencies installed inside SageMaker container

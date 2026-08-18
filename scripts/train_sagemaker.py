@@ -178,12 +178,15 @@ def main() -> None:
         py_version="py3",
         hyperparameters=hyperparameters,
         output_path=f"s3://{CONFIG.bucket}/{CONFIG.model_prefix}",
+        code_location=f"s3://{CONFIG.bucket}/{CONFIG.model_prefix}/code",
         sagemaker_session=sess,
         base_job_name="gmsc-pd",
         use_spot_instances=args.spot,
         max_run=3600,
         max_wait=7200 if args.spot else None,
         volume_size=10,
+        disable_profiler=True,
+        debugger_hook_config=False,
         dependencies=[str(PROJECT_ROOT / "sagemaker" / "requirements.txt")],
     )
 

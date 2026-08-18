@@ -16,10 +16,12 @@ import pandas as pd
 from lightgbm import LGBMClassifier
 from xgboost import XGBClassifier
 
+from typing import Union
+
 from financial_risk_analyst_ml.preprocessing import NUMERIC_FEATURES
 
 # Type alias for tree-based models supported by SHAP TreeExplainer.
-TreeModel = XGBClassifier | LGBMClassifier
+TreeModel = Union[XGBClassifier, LGBMClassifier]
 
 
 def compute_shap_values(

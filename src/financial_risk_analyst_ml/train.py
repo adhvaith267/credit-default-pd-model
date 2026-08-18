@@ -166,6 +166,19 @@ def parse_args() -> argparse.Namespace:
 def load_data(data_path: str) -> pd.DataFrame:
     path = Path(data_path)
 
+    if not path.exists():
+        logger.info("Local data file '%s' not found. Attempting to download from S3...", path)
+        try:
+            import boto3
+            s3 = boto3.client("s3", region_name=CONFIG.region)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            s3.download_file(CONFIG.bucket, CONFIG.gmsc_data_key, str(path))
+            logger.info("Downloaded s3://%s/%s -> %s", CONFIG.bucket, CONFIG.gmsc_data_key, path.resolve())
+        except Exception as err:
+            raise FileNotFoundError(
+                f"Data file '{data_path}' not found locally and S3 download failed: {err}"
+            ) from err
+
     if path.is_dir():
         csv_files = list(path.glob("*.csv"))
         if not csv_files:
