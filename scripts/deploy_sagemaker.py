@@ -83,6 +83,40 @@ def get_latest_model_artifact(bucket: str, prefix: str, region: str) -> str:
     return uri
 
 
+def cleanup_existing_endpoint(endpoint_name: str, region: str) -> bool:
+    """
+    Check if an endpoint already exists. If it exists in a FAILED or OUT_OF_SERVICE state,
+    delete it. Also delete any stale EndpointConfig with the same name if update_endpoint is False.
+    Returns True if the endpoint exists in IN_SERVICE state (so update_endpoint can be set).
+    """
+    sm_client = boto3.client("sagemaker", region_name=region)
+    is_in_service = False
+    try:
+        res = sm_client.describe_endpoint(EndpointName=endpoint_name)
+        status = res["EndpointStatus"]
+        logger.info("Found existing endpoint '%s' with status: %s", endpoint_name, status)
+        if status in ("Failed", "OutOfService"):
+            logger.info("Deleting failed/stopped endpoint '%s'...", endpoint_name)
+            sm_client.delete_endpoint(EndpointName=endpoint_name)
+            waiter = sm_client.get_waiter("endpoint_deleted")
+            waiter.wait(EndpointName=endpoint_name)
+            logger.info("Endpoint '%s' deleted successfully.", endpoint_name)
+        elif status == "InService":
+            is_in_service = True
+    except sm_client.exceptions.ClientError as err:
+        if "Could not find endpoint" not in str(err):
+            logger.warning("Error checking existing endpoint status: %s", err)
+
+    if not is_in_service:
+        try:
+            sm_client.delete_endpoint_config(EndpointConfigName=endpoint_name)
+            logger.info("Deleted stale endpoint configuration '%s'.", endpoint_name)
+        except sm_client.exceptions.ClientError:
+            pass
+
+    return is_in_service
+
+
 def parse_args() -> argparse.Namespace:
     """Parse command-line arguments."""
     parser = argparse.ArgumentParser(
@@ -145,23 +179,28 @@ def main() -> None:
         dependencies=[str(PROJECT_ROOT / "sagemaker" / "requirements.txt")],
     )
 
+    update_endpoint = cleanup_existing_endpoint(args.endpoint_name, CONFIG.region)
+
     logger.info(
-        "Deploying to endpoint '%s' (instance=%s, count=%d)...",
+        "Deploying to endpoint '%s' (instance=%s, count=%d, update=%s)...",
         args.endpoint_name,
         args.instance_type,
         args.instance_count,
+        update_endpoint,
     )
 
     predictor = model.deploy(
         endpoint_name=args.endpoint_name,
         instance_type=args.instance_type,
         initial_instance_count=args.instance_count,
+        update_endpoint=update_endpoint,
         wait=True,
     )
 
     logger.info("Deployment complete!")
     logger.info("Endpoint name: %s", predictor.endpoint_name)
     logger.info("Test with: uv run python scripts/invoke_endpoint.py")
+
 
 
 if __name__ == "__main__":

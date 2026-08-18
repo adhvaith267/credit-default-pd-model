@@ -2,7 +2,7 @@
 
 # credit-default-pd-model
 
-A machine learning model that predicts the Probability of Default (PD) for individual borrowers, trained on the Give Me Some Credit dataset using LightGBM with Optuna hyperparameter tuning and deployed on AWS SageMaker.
+An enterprise-grade machine learning pipeline for predicting borrower Probability of Default (PD) on the Give Me Some Credit (GMSC) dataset, featuring Optuna hyperparameter tuning, isotonic probability calibration, SHAP explainability, and real-time AWS SageMaker deployment.
 
 ![Python](https://img.shields.io/badge/Python-3.11-blue?logo=python&logoColor=white)
 ![AWS SageMaker](https://img.shields.io/badge/AWS-SageMaker-orange?logo=amazonaws&logoColor=white)
@@ -19,182 +19,105 @@ A machine learning model that predicts the Probability of Default (PD) for indiv
 
 ## Overview
 
-This repository implements a **Probability of Default (PD) model** — a binary classifier that estimates the likelihood a borrower will experience serious credit delinquency within two years. It covers the full ML lifecycle: data preprocessing, feature engineering, model training, hyperparameter tuning, calibration, explainability, and real-time inference via AWS SageMaker.
+This repository implements a **Probability of Default (PD) model** — a binary classifier estimating the likelihood that a credit borrower experiences serious delinquency (90+ days past due) within two years.
 
-This model is one subsystem of a larger **Financial Analyst AI** platform. The broader platform performs end-to-end credit analysis for individual borrowers. This repository is responsible solely for producing a calibrated PD score. All other credit engine logic lives in the backend service.
+It serves as the **PD Subsystem** within a broader **Financial Analyst AI** platform. The backend service consumes this model's calibrated output to calculate **Expected Loss**:
+
+$$\text{Expected Loss} = \text{PD} \times \text{LGD} \times \text{EAD}$$
 
 ```
-Financial Analyst AI  (backend service)
-  - REST API and credit decision workflows
-  - Loss Given Default (LGD)
-  - Exposure at Default (EAD)
-  - Expected Loss = PD x LGD x EAD
-  - Risk band assignment and business rules
-        |
-        | requests PD for a borrower
-        v
-credit-default-pd-model  (this repository)
-  - Probability of Default inference
-  - Preprocessing and feature engineering
-  - Hosted on AWS SageMaker real-time endpoint
+Financial Analyst AI (Backend Service)
+  ├── Credit decisioning workflows & REST APIs
+  ├── Loss Given Default (LGD) & Exposure at Default (EAD)
+  └── Expected Loss = PD x LGD x EAD
+        │
+        │ Requests calibrated PD for a borrower
+        ▼
+credit-default-pd-model (This Repository)
+  ├── Preprocessing, feature engineering & Optuna tuning
+  ├── Calibrated probability estimation (Isotonic Regression)
+  └── Hosted on AWS SageMaker Real-Time Endpoint
 ```
 
-The output of this model — a single calibrated probability between 0 and 1 — feeds directly into the Expected Loss calculation in the backend. Well-calibrated probabilities are therefore a hard requirement, not an optional enhancement.
+Because the output directly scales monetary risk in Expected Loss, **well-calibrated probabilities are a strict requirement**.
 
 ---
 
 ## Dataset
 
-**Give Me Some Credit (GMSC)** — Kaggle, 2011.
+**Give Me Some Credit (GMSC)** — Kaggle / Industry Benchmark.
 
 | Property | Value |
 |---|---|
-| Rows | 150,000 |
-| Features | 10 raw numeric |
-| Target | SeriousDlqin2yrs |
-| Positive class rate | 6.68% |
-| Missing values | MonthlyIncome (19.8%), NumberOfDependents (2.6%) |
-
-The dataset is stored in S3 and is not committed to this repository.
+| **Total Rows** | 150,000 |
+| **Features** | 10 raw financial attributes |
+| **Target Variable** | `SeriousDlqin2yrs` (Binary) |
+| **Positive Class Rate** | 6.68% (Severe Class Imbalance) |
+| **Missing Values** | `MonthlyIncome` (19.8%), `NumberOfDependents` (2.6%) |
 
 ---
 
-## Model Architecture
+## Performance Leaderboard & Calibration
 
-Three candidate models are trained and compared on a held-out validation set. The best model by ROC-AUC is selected, calibrated, and deployed. No ensembling is used — a single production model is served.
+Three candidate models were evaluated on a held-out validation set ($N=22,500$) using dynamic class imbalance weighting ($\text{scale\_pos\_weight} \approx 13.96$).
 
-### Logistic Regression
+### Validation Leaderboard (Optuna-Tuned, 50 Trials)
 
-A regularised logistic regression with balanced class weights. Serves as the interpretable baseline. Coefficients are directly auditable, which matters in regulated credit environments. Competitive ROC-AUC on this dataset despite its simplicity.
+| Model | ROC-AUC | PR-AUC | Brier Score | Status |
+|---|---|---|---|---|
+| **LightGBM (Tuned)** | **0.8731** | **0.4149** | **0.1417** | **Selected for Production** |
+| XGBoost (Tuned) | 0.8725 | 0.4137 | 0.1396 | Benchmark |
+| Logistic Regression | 0.8678 | 0.3981 | 0.1442 | Baseline |
 
-### XGBoost
+### Isotonic Probability Calibration (Held-Out Test Set)
 
-Gradient-boosted decision trees with `scale_pos_weight` for class imbalance. Hyperparameters are tuned via Optuna using the TPE sampler over 50 trials, optimising validation ROC-AUC. Strong non-linear modelling capacity.
+Raw gradient-boosting scores are uncalibrated probabilities. Applying Isotonic Regression trained on validation predictions yielded substantial calibration gains on the test set ($N=22,500$):
 
-### LightGBM
+- **Raw Model Brier Score**: `0.1421`
+- **Calibrated Brier Score**: **`0.0487`** (*~65.7% error reduction*)
+- **Brier Skill Score (BSS)**: **`0.2190`**
 
-Leaf-wise gradient-boosted trees. Faster to train than XGBoost and marginally better on tabular credit data. Uses `is_unbalance=True` for class imbalance. Hyperparameters are tuned via Optuna in parallel with XGBoost. Currently the best-performing model on GMSC.
+---
 
-### Model Comparison (untuned defaults, validation set)
+## Feature Engineering & Preprocessing
 
-| Model | ROC-AUC | PR-AUC | Brier Score |
+### Deterministic Features
+All feature engineering is strictly deterministic with zero learned parameters:
+- `MonthlyIncome_missing`, `NumberOfDependents_missing` (Missingness indicators)
+- `TotalDelinquencyCount` (Sum of 30-59, 60-89, and 90+ day late counts)
+- `HasDelinquency`, `SevereDelinquency` (Binary risk flags)
+- `RealEstateLoanRatio`, `IncomePerCreditLineLoan`, `PercentageTimePastDue`
+
+### Leakage-Free Preprocessing Pipeline
+```
+Raw Borrower Attributes
+        │
+        ▼
+GMSCDataCleaner (Drops IDs, cleans invalid age <= 0, computes features)
+        │
+        ▼
+SimpleImputer (Median imputation fitted on X_train only)
+        │
+        ▼
+QuantileClipper (0.5th – 99.5th percentile bounds fitted on X_train only)
+        │
+        ▼
+RobustScaler (Centres on median, scales by IQR)
+```
+
+---
+
+## Explainability (SHAP)
+
+Global feature importance calculated via SHAP `TreeExplainer` on the tuned LightGBM production model:
+
+| Rank | Feature | Mean \|SHAP\| | Impact Description |
 |---|---|---|---|
-| Logistic Regression | 0.8678 | 0.3981 | 0.1442 |
-| XGBoost | 0.8658 | 0.4060 | 0.1286 |
-| LightGBM | 0.8620 | 0.4031 | 0.1200 |
-
-### Model Comparison (Optuna-tuned, 50 trials, validation set)
-
-| Model | ROC-AUC | PR-AUC | Brier Score |
-|---|---|---|---|
-| LightGBM (tuned) | 0.8731 | 0.4149 | 0.1417 |
-| XGBoost (tuned) | 0.8725 | 0.4137 | 0.1396 |
-| Logistic Regression | 0.8678 | 0.3981 | 0.1442 |
-
-### Model Tradeoffs
-
-**Logistic Regression** is the most interpretable and easiest to audit. Each feature contributes a signed coefficient that can be explained to a credit committee. The main limitation is that it cannot capture non-linear relationships.
-
-**XGBoost** captures non-linearities and feature interactions. It is the industry standard for credit risk tabular models. The tradeoff is interpretability, addressed here via SHAP.
-
-**LightGBM** achieves similar or better accuracy than XGBoost while training significantly faster, which matters when running Optuna hyperparameter searches. Chosen as the production model.
-
-**Why not an ensemble?** Published benchmarks on GMSC show that stacking or averaging multiple models produces negligible improvement in ROC-AUC over a single well-tuned model. The added deployment, monitoring, and versioning complexity is not justified.
-
----
-
-## Feature Engineering
-
-All feature engineering is deterministic — no parameters are learned, so it can safely happen before the train/validation/test split.
-
-| Feature | Description |
-|---|---|
-| `MonthlyIncome_missing` | Indicator: 1 if MonthlyIncome was NaN |
-| `NumberOfDependents_missing` | Indicator: 1 if NumberOfDependents was NaN |
-| `TotalDelinquencyCount` | Sum of all delinquency count columns |
-| `HasDelinquency` | 1 if any delinquency event exists |
-| `SevereDelinquency` | 1 if any 90+ day late payment exists |
-| `RealEstateLoanRatio` | Real estate loans / total open credit lines |
-| `IncomePerCreditLineLoan` | Monthly income / total open credit lines |
-| `PercentageTimePastDue` | 30–59 day delinquencies / total credit lines |
-
----
-
-## Preprocessing Pipeline
-
-The pipeline is fitted exclusively on training data and applied identically to validation and test sets to prevent data leakage.
-
-```
-Raw borrower features
-        |
-        v
-GMSCDataCleaner
-  - Drop identifier column (Unnamed: 0)
-  - Set age <= 0 to NaN
-  - Add engineered features
-        |
-        v
-SimpleImputer (median strategy)
-        |
-        v
-QuantileClipper (0.5th - 99.5th percentile)
-  - Bounds learned from training data only
-        |
-        v
-RobustScaler
-  - Centres on median, scales by IQR
-```
-
----
-
-## Calibration
-
-Raw model probabilities are not guaranteed to be well-calibrated. Calibration is performed using isotonic regression fitted on the validation set. The calibration step reduced the Brier score from 0.1421 to 0.0487 on the test set, achieving a Brier Skill Score (BSS) of 0.2190.
-
----
-
-## Explainability
-
-SHAP TreeExplainer is used for both XGBoost and LightGBM. Two levels of explanation are available:
-
-- **Global importance**: mean absolute SHAP value across the test set.
-- **Per-borrower explanation**: signed SHAP values for a single inference.
-
-Top features by mean absolute SHAP value on the test set (LightGBM, tuned):
-
-| Rank | Feature | Mean Absolute SHAP |
-|---|---|---|
-| 1 | RevolvingUtilizationOfUnsecuredLines | 0.6511 |
-| 2 | TotalDelinquencyCount | 0.2944 |
-| 3 | age | 0.2433 |
-| 4 | HasDelinquency | 0.2098 |
-| 5 | NumberOfOpenCreditLinesAndLoans | 0.1120 |
-
----
-
-## AWS Architecture
-
-```
-GitHub (source code)
-        |
-        v
-SageMaker Training Job  (train_sagemaker.py)
-  - Reads dataset from S3
-  - Runs train.py inside managed sklearn container
-  - Writes model artifacts to S3
-        |
-        v
-S3 (model.tar.gz)
-        |
-        v
-SageMaker Endpoint  (deploy_sagemaker.py)
-  - Runs inference.py
-  - Accepts JSON borrower features
-  - Returns calibrated PD
-        |
-        v
-Backend Service
-```
+| **1** | `RevolvingUtilizationOfUnsecuredLines` | **0.6511** | Credit card utilization ratio (Primary driver) |
+| **2** | `TotalDelinquencyCount` | **0.2944** | Combined historical delinquency events |
+| **3** | `age` | **0.2433** | Borrower age |
+| **4** | `HasDelinquency` | **0.2098** | Binary indicator of prior late payments |
+| **5** | `NumberOfOpenCreditLinesAndLoans` | **0.1120** | Total open credit accounts |
 
 ---
 
@@ -202,109 +125,96 @@ Backend Service
 
 ```
 financial-risk-analyst-ml/
-|
-|-- src/financial_risk_analyst_ml/
-|   |-- config.py           S3 paths, AWS region, and configuration constants
-|   |-- features.py         Deterministic feature engineering
-|   |-- preprocessing.py    Cleaning, imputation, quantile clipping, robust scaling
-|   |-- models.py           Model constructors (Logistic Regression, XGBoost, LightGBM)
-|   |-- tuning.py           Optuna hyperparameter tuning
-|   |-- evaluation.py       ROC-AUC, PR-AUC, Brier score, and threshold evaluation
-|   |-- calibration.py      Platt scaling and Isotonic probability calibration
-|   |-- explain.py          SHAP feature importance and explanation utilities
-|   |-- train.py            Training script entry point (SageMaker + local execution)
-|   |-- inference.py        SageMaker real-time inference handler
-|
-|-- scripts/
-|   |-- train_sagemaker.py     Submit SageMaker training job
-|   |-- deploy_sagemaker.py    Deploy model artifact to SageMaker real-time endpoint
-|   |-- invoke_endpoint.py     Test live SageMaker endpoint with sample payload
-|
-|-- sagemaker/
-|   |-- requirements.txt    Dependencies installed inside SageMaker container
-|
-|-- tests/
-|   |-- test_calibration.py
-|   |-- test_evaluation.py
-|   |-- test_features.py
-|   |-- test_inference.py
-|   |-- test_preprocessing.py
-|
-|-- pyproject.toml
-|-- uv.lock
+│
+├── src/financial_risk_analyst_ml/   # Core Package (10 modular files)
+│   ├── config.py           # S3 paths, AWS region, and configuration constants
+│   ├── features.py         # Deterministic feature engineering
+│   ├── preprocessing.py    # Leakage-free preprocessing pipeline
+│   ├── models.py           # Model builders (Logistic Regression, XGBoost, LightGBM)
+│   ├── tuning.py           # Optuna hyperparameter optimization engine
+│   ├── evaluation.py       # ROC-AUC, PR-AUC, Brier score, and BSS metrics
+│   ├── calibration.py      # Platt & Isotonic probability calibration
+│   ├── explain.py          # SHAP explainability utilities
+│   ├── train.py            # Main training execution script (with auto-S3 download)
+│   └── inference.py        # SageMaker real-time serving handler
+│
+├── scripts/                         # Operational CLI Entry Points
+│   ├── train_sagemaker.py  # Submit managed spot training job to AWS SageMaker
+│   ├── deploy_sagemaker.py # Deploy model artifact to SageMaker real-time endpoint
+│   └── invoke_endpoint.py  # Test live SageMaker endpoint with sample payload
+│
+├── sagemaker/
+│   └── requirements.txt    # SageMaker container dependencies
+│
+├── tests/                           # Unit test suite (98 passing tests)
+├── pyproject.toml
+└── README.md
 ```
 
 ---
 
-## Local Development
+## Getting Started
 
-This project uses [uv](https://github.com/astral-sh/uv) for environment management.
+### Local Environment Setup
 
-**Run tests:**
+This project uses [`uv`](https://github.com/astral-sh/uv) for fast, reproducible dependency management.
 
 ```bash
-uv run --with pandas --with numpy --with scikit-learn pytest tests/ -v
+# Clone the repository
+git clone https://github.com/adhvaith267/credit-default-pd-model.git
+cd credit-default-pd-model
+
+# Install dependencies and sync environment
+uv sync
+
+# Run test suite
+uv run pytest tests/ -v
+```
+
+### Local Model Training
+
+Train and evaluate models locally. If `./cs-training.csv` is not present locally, `train.py` will automatically download it from S3:
+
+```bash
+# Train all models with 50 Optuna trials
+uv run python -m financial_risk_analyst_ml.train --data-path cs-training.csv --model all --tune --tune-trials 50
 ```
 
 ---
 
-## SageMaker Workflow
+## AWS SageMaker Deployment Workflow
 
 ### Prerequisites
+1. AWS CLI configured (`aws configure` or SSO credentials).
+2. IAM Role `FinancialRiskSageMakerExecutionRole` with SageMaker and S3 permissions.
+3. Dataset uploaded to `s3://financial-risk-analyst-adhvaith-2026/datasets/gmsc/raw/cs-training.csv`.
 
-- AWS credentials configured (`aws configure` or IAM Identity Center)
-- IAM role `FinancialRiskSageMakerExecutionRole` exists with SageMaker full access and S3 read/write
-- Dataset uploaded to S3: `s3://financial-risk-analyst-adhvaith-2026/datasets/gmsc/raw/cs-training.csv`
-- Service quota approved: `ml.m5.xlarge for training job usage` ≥ 1 (request via AWS Service Quotas)
-
-### 1. Submit training job
+### Step 1: Submit SageMaker Spot Training Job
+Submits a managed spot training job (`ml.m5.xlarge`) to AWS SageMaker:
 
 ```bash
+# Full Optuna tuning job (~70% cost savings via spot instances)
 uv run python scripts/train_sagemaker.py
-```
 
-Options:
-
-```bash
-# Choose model and tuning settings
-uv run python scripts/train_sagemaker.py \
-  --model all \
-  --tune-trials 50 \
-  --instance-type ml.m5.xlarge
-
-# Skip tuning for a quick run
+# Quick execution without hyperparameter tuning (~2-3 mins)
 uv run python scripts/train_sagemaker.py --no-tune
-
-# Submit and exit without waiting
-uv run python scripts/train_sagemaker.py --no-wait
 ```
 
-The script uses **managed spot training by default** (~70% cheaper). On completion it prints the model artifact S3 URI.
-
-### 2. Deploy to endpoint
+### Step 2: Deploy to SageMaker Real-Time Endpoint
+Deploys the trained `model.tar.gz` from S3 to a real-time SageMaker endpoint (`gmsc-pd-endpoint`):
 
 ```bash
-uv run python scripts/deploy_sagemaker.py \
-  --model-artifact s3://financial-risk-analyst-adhvaith-2026/models/gmsc/<job-name>/output/model.tar.gz
+uv run python scripts/deploy_sagemaker.py
 ```
 
-Options:
-
-```bash
-uv run python scripts/deploy_sagemaker.py \
-  --model-artifact s3://... \
-  --endpoint-name gmsc-pd-endpoint \
-  --instance-type ml.m5.xlarge
-```
-
-### 3. Test the endpoint
+### Step 3: Invoke & Validate the Live Endpoint
+Sends a sample borrower payload to the live endpoint to verify inference latency and output structure:
 
 ```bash
 uv run python scripts/invoke_endpoint.py --pretty
 ```
 
-**Request format:**
-
+**Sample Request Payload:**
 ```json
 {
   "RevolvingUtilizationOfUnsecuredLines": 0.766,
@@ -320,8 +230,7 @@ uv run python scripts/invoke_endpoint.py --pretty
 }
 ```
 
-**Response format:**
-
+**Sample Response Output:**
 ```json
 {
   "pd": 0.083,
@@ -331,49 +240,14 @@ uv run python scripts/invoke_endpoint.py --pretty
 
 ---
 
-## Evaluation Metrics
+## Core Engineering Decisions
 
-Accuracy is not used as a primary metric. With a 6.68% positive class, a model that always predicts no default achieves 93.32% accuracy and is completely useless.
-
-Primary metrics:
-
-- **ROC-AUC**: measures the model's ability to rank borrowers by risk.
-- **PR-AUC**: precision-recall AUC. More informative under severe class imbalance.
-- **Brier Score**: mean squared error between predicted probability and true label. Measures calibration quality.
-- **Brier Skill Score**: improvement over a naive baseline that always predicts the base rate.
+1. **Single Production Model over Ensembles**: Benchmarks on GMSC show that model stacking yields negligible ROC-AUC gain over a single well-tuned LightGBM model. Serving a single model dramatically reduces endpoint latency, deployment complexity, and monitoring overhead.
+2. **Mandatory Calibration**: Because the PD output directly scales Expected Loss ($\text{PD} \times \text{LGD} \times \text{EAD}$), uncalibrated models cause severe mispricing of credit risk. Isotonic calibration is enforced prior to model packaging.
+3. **Container Compatibility**: Pinned dependencies and compatibility fixes ensure seamless execution across local Python 3.11 environments and AWS SageMaker Python 3.9 containers.
 
 ---
 
-## Design Decisions
+## License
 
-**Single model, not an ensemble.** Published GMSC benchmarks show that stacking produces no meaningful ROC-AUC improvement over a single tuned model. A single model is simpler to deploy, monitor, version, and explain.
-
-**Calibration over raw probabilities.** The backend uses PD in `Expected Loss = PD x LGD x EAD`. A model with poor calibration will systematically misprice risk. Isotonic calibration is applied as a mandatory step.
-
-**No data in Git.** Datasets and model artifacts live in S3. The repository contains code, configuration, and tests only.
-
-**Spot training by default.** Managed spot training is enabled by default in `train_sagemaker.py`. For a ~30-minute training job the interruption risk is low and the cost saving is ~70%.
-
-**SageMaker v2 SDK.** Both `train_sagemaker.py` and `deploy_sagemaker.py` use the SageMaker v2 SDK (`sagemaker>=2.231,<3.0`) with `SKLearn` estimator and `SKLearnModel` for training and deployment respectively.
-
----
-
-## Requirements
-
-**Local environment:**
-
-- Python 3.11
-- uv
-- AWS CLI configured with appropriate credentials
-
-**Python dependencies (managed by uv):**
-
-- `boto3` — AWS SDK
-- `sagemaker>=2.231,<3.0` — SageMaker v2 SDK for job submission and deployment
-
-**SageMaker container (see `sagemaker/requirements.txt`):**
-
-- pandas, numpy, scikit-learn
-- xgboost, lightgbm
-- optuna
-- shap, joblib
+Distributed under the MIT License. See `LICENSE` for details.
