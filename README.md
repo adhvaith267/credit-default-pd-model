@@ -58,7 +58,7 @@ Because the output directly scales monetary risk in Expected Loss, **well-calibr
 
 ## Performance Leaderboard & Calibration
 
-Three candidate models were evaluated on a held-out validation set ($N=22,500$) using dynamic class imbalance weighting ($\text{scale\_pos\_weight} \approx 13.96$).
+Three candidate models were evaluated on a held-out validation set ($N=22,500$) using dynamic class imbalance weighting (`scale_pos_weight` $\approx 13.96$).
 
 ### Validation Leaderboard (Optuna-Tuned, 50 Trials)
 
