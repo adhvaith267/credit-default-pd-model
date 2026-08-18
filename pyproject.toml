@@ -10,6 +10,14 @@ requires-python = ">=3.11"
 dependencies = [
     "sagemaker>=2.231.0,<3.0.0",
     "botocore[crt]>=1.43.72",
+    "scikit-learn>=1.2.0,<1.6.0",
+    "pandas>=2.0.0,<3.0.0",
+    "numpy>=1.24.0,<2.0.0",
+    "joblib>=1.2.0",
+    "xgboost>=2.0.0",
+    "lightgbm>=4.0.0",
+    "optuna>=3.6.0",
+    "shap>=0.43.0",
 ]
 
 [build-system]
