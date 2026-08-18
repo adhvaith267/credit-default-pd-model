@@ -415,15 +415,12 @@ def train_and_evaluate(args: argparse.Namespace) -> None:
 
     if best_name in ("xgboost", "lightgbm"):
         logger.info("Computing SHAP feature importance on test set...")
-        try:
-            shap_top = shap_summary_dict(best_model, X_test, top_n=10)
-            for i, entry in enumerate(shap_top, 1):
-                logger.info(
-                    "  #%d  %-45s  mean|SHAP|=%.4f",
-                    i, entry["feature"], entry["mean_abs_shap"],
-                )
-        except Exception as err:
-            logger.warning("SHAP calculation skipped due to container environment incompatibility: %s", err)
+        shap_top = shap_summary_dict(best_model, X_test, top_n=10)
+        for i, entry in enumerate(shap_top, 1):
+            logger.info(
+                "  #%d  %-45s  mean|SHAP|=%.4f",
+                i, entry["feature"], entry["mean_abs_shap"],
+            )
 
     # ------------------------------------------------------------------
     # 9. Save all artifacts

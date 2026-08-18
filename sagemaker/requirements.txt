@@ -1,10 +1,11 @@
 # Requirements installed into the SageMaker SKLearn 1.2-1 container (Python 3.9).
 #
-# The container ships: numpy 1.23.x, scipy 1.10.x, scikit-learn 1.2.1, pandas 1.5.x.
-# We pin only valid versions available on PyPI.
+# The SageMaker container ships with NumPy 1.23.x.
+# Numba < 0.59.0 and SHAP < 0.44.0 are pinned to ensure compatibility
+# with NumPy 1.23.x without triggering NumPy 2.x C-extension errors.
 
 xgboost>=2.0.0,<3.0.0
 lightgbm>=4.0.0,<4.6.0
 optuna>=3.6.0,<4.1.0
-shap>=0.43.0,<0.46.0
-
+numba>=0.56.0,<0.59.0
+shap>=0.42.0,<0.44.0

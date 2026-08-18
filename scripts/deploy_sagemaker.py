@@ -1,23 +1,15 @@
 """
-deploy_sagemaker.py — Deploy the trained GMSC PD model to a SageMaker endpoint.
+deploy_sagemaker.py — Production-grade idempotent SageMaker deployment script.
 
-Uses the SageMaker v2 SDK with the SKLearnModel class.
+Uses boto3 and SageMaker SDK to handle all deployment lifecycles idempotently:
+  - Timestamped EndpointConfig names (prevents EndpointConfig collision errors)
+  - In-place zero-downtime updates for active (InService) endpoints
+  - Automatic status waiting for Creating / Updating endpoints
+  - Automatic cleanup of Failed or OutOfService endpoints
 
 Usage:
-    # Deploy from the latest training job artifact:
     uv run python scripts/deploy_sagemaker.py
-
-    # Deploy a specific model artifact:
-    uv run python scripts/deploy_sagemaker.py \\
-        --model-artifact s3://financial-risk-analyst-adhvaith-2026/models/gmsc/<job>/output/model.tar.gz
-
-    # Custom instance type and endpoint name:
-    uv run python scripts/deploy_sagemaker.py \\
-        --instance-type ml.m5.xlarge \\
-        --endpoint-name my-custom-endpoint
-
-Endpoint created/updated:
-    gmsc-pd-endpoint  (default)
+    uv run python scripts/deploy_sagemaker.py --endpoint-name custom-pd-endpoint
 """
 
 from __future__ import annotations
@@ -25,6 +17,7 @@ from __future__ import annotations
 import argparse
 import logging
 import sys
+from datetime import datetime
 from pathlib import Path
 
 import boto3
@@ -57,11 +50,7 @@ def get_execution_role_arn(role_name: str, region: str) -> str:
 
 
 def get_latest_model_artifact(bucket: str, prefix: str, region: str) -> str:
-    """
-    Return the S3 URI of the most recently uploaded model.tar.gz under prefix.
-
-    Raises RuntimeError if no artifact is found.
-    """
+    """Return the S3 URI of the most recently uploaded model.tar.gz."""
     s3 = boto3.client("s3", region_name=region)
     paginator = s3.get_paginator("list_objects_v2")
 
@@ -83,38 +72,93 @@ def get_latest_model_artifact(bucket: str, prefix: str, region: str) -> str:
     return uri
 
 
-def cleanup_existing_endpoint(endpoint_name: str, region: str) -> bool:
+def deploy_or_update_endpoint(
+    sm_client,
+    model_name: str,
+    endpoint_name: str,
+    instance_type: str,
+    instance_count: int,
+) -> None:
     """
-    Check if an endpoint already exists. If it exists in a FAILED or OUT_OF_SERVICE state,
-    delete it. Also delete any stale EndpointConfig with the same name if update_endpoint is False.
-    Returns True if the endpoint exists in IN_SERVICE state (so update_endpoint can be set).
+    Idempotently deploy or update a SageMaker endpoint.
+
+    Handles all endpoint states:
+      - Non-existent: Creates endpoint.
+      - InService: Updates endpoint in-place using a unique timestamped EndpointConfig.
+      - Creating / Updating: Waits for completion, then updates endpoint in-place.
+      - Failed / OutOfService: Deletes failed endpoint and creates a fresh endpoint.
     """
-    sm_client = boto3.client("sagemaker", region_name=region)
-    is_in_service = False
+    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    config_name = f"{endpoint_name}-cfg-{timestamp}"
+
+    # 1. Create unique EndpointConfig for this deployment
+    logger.info("Creating unique EndpointConfig '%s'...", config_name)
+    sm_client.create_endpoint_config(
+        EndpointConfigName=config_name,
+        ProductionVariants=[
+            {
+                "VariantName": "AllTraffic",
+                "ModelName": model_name,
+                "InitialInstanceCount": instance_count,
+                "InstanceType": instance_type,
+                "InitialVariantWeight": 1.0,
+            }
+        ],
+    )
+
+    # 2. Inspect existing endpoint status
+    endpoint_status = None
     try:
         res = sm_client.describe_endpoint(EndpointName=endpoint_name)
-        status = res["EndpointStatus"]
-        logger.info("Found existing endpoint '%s' with status: %s", endpoint_name, status)
-        if status in ("Failed", "OutOfService"):
-            logger.info("Deleting failed/stopped endpoint '%s'...", endpoint_name)
-            sm_client.delete_endpoint(EndpointName=endpoint_name)
-            waiter = sm_client.get_waiter("endpoint_deleted")
-            waiter.wait(EndpointName=endpoint_name)
-            logger.info("Endpoint '%s' deleted successfully.", endpoint_name)
-        elif status == "InService":
-            is_in_service = True
+        endpoint_status = res["EndpointStatus"]
+        logger.info("Found existing endpoint '%s' with status: %s", endpoint_name, endpoint_status)
     except sm_client.exceptions.ClientError as err:
-        if "Could not find endpoint" not in str(err):
-            logger.warning("Error checking existing endpoint status: %s", err)
+        if "Could not find endpoint" in str(err):
+            logger.info("Endpoint '%s' does not exist yet. Creating new endpoint...", endpoint_name)
+        else:
+            raise
 
-    if not is_in_service:
+    # 3. Handle Creating / Updating states by waiting for InService
+    if endpoint_status in ("Creating", "Updating"):
+        logger.info("Endpoint '%s' is currently %s. Waiting for InService status...", endpoint_name, endpoint_status)
+        waiter = sm_client.get_waiter("endpoint_in_service")
         try:
-            sm_client.delete_endpoint_config(EndpointConfigName=endpoint_name)
-            logger.info("Deleted stale endpoint configuration '%s'.", endpoint_name)
-        except sm_client.exceptions.ClientError:
-            pass
+            waiter.wait(EndpointName=endpoint_name)
+            endpoint_status = "InService"
+            logger.info("Endpoint '%s' reached InService state.", endpoint_name)
+        except Exception as wait_err:
+            logger.warning("Endpoint did not reach InService: %s", wait_err)
+            res = sm_client.describe_endpoint(EndpointName=endpoint_name)
+            endpoint_status = res["EndpointStatus"]
 
-    return is_in_service
+    # 4. Handle Failed / OutOfService states by deleting
+    if endpoint_status in ("Failed", "OutOfService"):
+        logger.info("Deleting failed/stopped endpoint '%s'...", endpoint_name)
+        sm_client.delete_endpoint(EndpointName=endpoint_name)
+        waiter = sm_client.get_waiter("endpoint_deleted")
+        waiter.wait(EndpointName=endpoint_name)
+        logger.info("Endpoint '%s' deleted successfully.", endpoint_name)
+        endpoint_status = None
+
+    # 5. Perform Endpoint Creation or Update
+    if endpoint_status == "InService":
+        logger.info("Updating live endpoint '%s' with new config '%s'...", endpoint_name, config_name)
+        sm_client.update_endpoint(
+            EndpointName=endpoint_name,
+            EndpointConfigName=config_name,
+        )
+    else:
+        logger.info("Creating new endpoint '%s' with config '%s'...", endpoint_name, config_name)
+        sm_client.create_endpoint(
+            EndpointName=endpoint_name,
+            EndpointConfigName=config_name,
+        )
+
+    # 6. Wait for Endpoint to reach InService
+    logger.info("Waiting for endpoint '%s' to reach InService state (this takes 3-5 mins)...", endpoint_name)
+    waiter = sm_client.get_waiter("endpoint_in_service")
+    waiter.wait(EndpointName=endpoint_name)
+    logger.info("Endpoint '%s' is now IN_SERVICE!", endpoint_name)
 
 
 def parse_args() -> argparse.Namespace:
@@ -161,6 +205,7 @@ def main() -> None:
     logger.info("Using IAM role: %s", role_arn)
 
     sess = sagemaker.Session(boto_session=boto3.Session(region_name=CONFIG.region))
+    sm_client = boto3.client("sagemaker", region_name=CONFIG.region)
 
     model_data = (
         args.model_artifact
@@ -179,28 +224,23 @@ def main() -> None:
         dependencies=[str(PROJECT_ROOT / "sagemaker" / "requirements.txt")],
     )
 
-    update_endpoint = cleanup_existing_endpoint(args.endpoint_name, CONFIG.region)
+    # Prepare and create SageMaker Model resource in AWS
+    logger.info("Creating SageMaker model resource in AWS...")
+    model._create_sagemaker_model(instance_type=args.instance_type)
+    logger.info("SageMaker model created with name: %s", model.name)
 
-    logger.info(
-        "Deploying to endpoint '%s' (instance=%s, count=%d, update=%s)...",
-        args.endpoint_name,
-        args.instance_type,
-        args.instance_count,
-        update_endpoint,
-    )
-
-    predictor = model.deploy(
+    # Idempotent Deployment / Update
+    deploy_or_update_endpoint(
+        sm_client=sm_client,
+        model_name=model.name,
         endpoint_name=args.endpoint_name,
         instance_type=args.instance_type,
-        initial_instance_count=args.instance_count,
-        update_endpoint=update_endpoint,
-        wait=True,
+        instance_count=args.instance_count,
     )
 
     logger.info("Deployment complete!")
-    logger.info("Endpoint name: %s", predictor.endpoint_name)
+    logger.info("Endpoint name: %s", args.endpoint_name)
     logger.info("Test with: uv run python scripts/invoke_endpoint.py")
-
 
 
 if __name__ == "__main__":
