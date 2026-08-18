@@ -64,7 +64,10 @@ import joblib
 import numpy as np
 import pandas as pd
 
-from financial_risk_analyst_ml.calibration import calibrate_probabilities
+try:
+    from financial_risk_analyst_ml.calibration import calibrate_probabilities
+except ImportError:
+    from calibration import calibrate_probabilities
 
 
 logger = logging.getLogger(__name__)

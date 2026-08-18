@@ -179,18 +179,6 @@ Train and evaluate models locally. If `./cs-training.csv` is not present locally
 uv run python -m financial_risk_analyst_ml.train --data-path cs-training.csv --model all --tune --tune-trials 50
 ```
 
-### Quick Commands (Makefile Shortcuts)
-
-You can use the included `Makefile` for short, memorable commands:
-
-| Task | Command | Standard Equivalent |
-|---|---|---|
-| **Submit Full Training Job** | `make train` | `uv run python scripts/train_sagemaker.py` |
-| **Submit Fast Training Job** | `make train-fast` | `uv run python scripts/train_sagemaker.py --no-tune` |
-| **Deploy Endpoint** | `make deploy` | `uv run python scripts/deploy_sagemaker.py` |
-| **Test Live Endpoint** | `make invoke` | `uv run python scripts/invoke_endpoint.py --pretty` |
-| **Run Unit Tests** | `make test` | `uv run pytest tests/ -v` |
-
 ---
 
 ## AWS SageMaker Deployment Workflow
@@ -200,22 +188,32 @@ You can use the included `Makefile` for short, memorable commands:
 2. IAM Role `FinancialRiskSageMakerExecutionRole` with SageMaker and S3 permissions.
 3. Dataset uploaded to `s3://financial-risk-analyst-adhvaith-2026/datasets/gmsc/raw/cs-training.csv`.
 
-### Step 1: Submit SageMaker Spot Training Job
+### Option A: GitHub Actions (1-Click Automated Cloud Pipeline)
+Trigger training and deployment directly from your browser:
+1. Go to **Actions** $\rightarrow$ **SageMaker ML Pipeline**.
+2. Click **Run workflow**.
+3. Choose Action (`train_and_deploy`, `train_only`, or `deploy_only`) $\rightarrow$ Click **Run workflow**.
+
+---
+
+### Option B: CLI Commands
+
+#### Step 1: Submit SageMaker Spot Training Job
 Submits a managed spot training job (`ml.m5.xlarge`) to AWS SageMaker:
 
 ```bash
 # Full Optuna tuning job (~70% cost savings via spot instances)
-make train
+uv run python scripts/train_sagemaker.py
 
 # Quick execution without hyperparameter tuning (~2-3 mins)
-make train-fast
+uv run python scripts/train_sagemaker.py --no-tune
 ```
 
-### Step 2: Deploy to SageMaker Real-Time Endpoint
+#### Step 2: Deploy to SageMaker Real-Time Endpoint
 Deploys the trained `model.tar.gz` from S3 to a real-time SageMaker endpoint (`gmsc-pd-endpoint`):
 
 ```bash
-make deploy
+uv run python scripts/deploy_sagemaker.py
 ```
 
 ### Step 3: Invoke & Validate the Live Endpoint
