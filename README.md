@@ -11,7 +11,6 @@ A production-grade machine learning pipeline for predicting borrower Probability
 ![scikit-learn](https://img.shields.io/badge/scikit--learn-1.x-blue?logo=scikitlearn&logoColor=white)
 ![SHAP](https://img.shields.io/badge/Explainability-SHAP-purple)
 ![Optuna](https://img.shields.io/badge/Tuning-Optuna-lightgrey)
-![Tests](https://img.shields.io/badge/Tests-98%20Passing-brightgreen)
 
 </div>
 
