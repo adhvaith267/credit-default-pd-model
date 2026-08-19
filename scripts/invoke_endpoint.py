@@ -45,19 +45,35 @@ import boto3
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 from financial_risk_analyst_ml.config import CONFIG  # noqa: E402
 
-# Example borrower for smoke-testing the endpoint without an input file.
-EXAMPLE_BORROWER = {
-    "RevolvingUtilizationOfUnsecuredLines": 0.766,
-    "age": 45,
-    "NumberOfTime30-59DaysPastDueNotWorse": 2,
-    "DebtRatio": 0.80,
-    "MonthlyIncome": 9120.0,
-    "NumberOfOpenCreditLinesAndLoans": 13,
+# Built-in test suite testing both APPROVED (Low Risk) and DECLINED (High Risk) scenarios.
+LOW_RISK_BORROWER = {
+    "RevolvingUtilizationOfUnsecuredLines": 0.05,
+    "age": 52,
+    "NumberOfTime30-59DaysPastDueNotWorse": 0,
+    "DebtRatio": 0.25,
+    "MonthlyIncome": 12500.0,
+    "NumberOfOpenCreditLinesAndLoans": 8,
     "NumberOfTimes90DaysLate": 0,
-    "NumberRealEstateLoansOrLines": 6,
+    "NumberRealEstateLoansOrLines": 1,
     "NumberOfTime60-89DaysPastDueNotWorse": 0,
-    "NumberOfDependents": 2.0,
+    "NumberOfDependents": 1.0,
 }
+
+HIGH_RISK_BORROWER = {
+    "RevolvingUtilizationOfUnsecuredLines": 0.95,
+    "age": 28,
+    "NumberOfTime30-59DaysPastDueNotWorse": 3,
+    "DebtRatio": 0.85,
+    "MonthlyIncome": 2100.0,
+    "NumberOfOpenCreditLinesAndLoans": 14,
+    "NumberOfTimes90DaysLate": 2,
+    "NumberRealEstateLoansOrLines": 4,
+    "NumberOfTime60-89DaysPastDueNotWorse": 1,
+    "NumberOfDependents": 3.0,
+}
+
+EXAMPLE_BORROWERS = [LOW_RISK_BORROWER, HIGH_RISK_BORROWER]
+
 
 logging.basicConfig(
     level=logging.INFO,
@@ -165,8 +181,8 @@ def main() -> None:
             payload = json.load(fh)
         logger.info("Loaded payload from: %s", args.input_file)
     else:
-        payload = EXAMPLE_BORROWER
-        logger.info("Using built-in example borrower.")
+        payload = EXAMPLE_BORROWERS
+        logger.info("Using built-in test suite (Low Risk & High Risk borrowers).")
 
     result = invoke(
         endpoint_name=args.endpoint_name,
@@ -177,14 +193,17 @@ def main() -> None:
     indent = 2 if args.pretty else None
     print(json.dumps(result, indent=indent))
 
-    if isinstance(result, dict) and "pd" in result:
-        pd_value = result["pd"]
-        status = result.get("status", "UNKNOWN")
-        drivers = result.get("risk_drivers", [])
-        logger.info("PD = %.4f (%.2f%%) | Status = %s", pd_value, pd_value * 100, status)
-        if drivers:
-            logger.info("Primary Risk Drivers: %s", drivers)
+    results_list = [result] if isinstance(result, dict) else result
+    for idx, item in enumerate(results_list, start=1):
+        if isinstance(item, dict) and "pd" in item:
+            pd_val = item["pd"]
+            status = item.get("status", "UNKNOWN")
+            drivers = item.get("risk_drivers", [])
+            logger.info("Borrower #%d: PD = %.4f (%.2f%%) | Status = %s", idx, pd_val, pd_val * 100, status)
+            if drivers:
+                logger.info("  Primary Risk Drivers: %s", drivers)
 
 
 if __name__ == "__main__":
     main()
+

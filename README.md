@@ -304,52 +304,33 @@ uv run python scripts/deploy_sagemaker.py
 ```
 
 #### 3. Invoke & Validate Live Endpoint
-Sends a sample borrower payload to verify endpoint availability and response formatting:
+Sends a dual-borrower test payload (testing both Low Risk / APPROVED and High Risk / DECLINED scenarios) to verify endpoint availability and response formatting:
 
 ```bash
 uv run python scripts/invoke_endpoint.py --pretty
 ```
 
-**Sample Request Payload:**
+**Sample Batch Response Output:**
 ```json
-{
-  "RevolvingUtilizationOfUnsecuredLines": 0.766,
-  "age": 45,
-  "NumberOfTime30-59DaysPastDueNotWorse": 2,
-  "DebtRatio": 0.80,
-  "MonthlyIncome": 9120.0,
-  "NumberOfOpenCreditLinesAndLoans": 13,
-  "NumberOfTimes90DaysLate": 0,
-  "NumberRealEstateLoansOrLines": 6,
-  "NumberOfTime60-89DaysPastDueNotWorse": 0,
-  "NumberOfDependents": 2.0
-}
+[
+  {
+    "pd": 0.0185,
+    "status": "APPROVED",
+    "model_version": "gmsc-xgb-v1",
+    "risk_drivers": []
+  },
+  {
+    "pd": 0.354128,
+    "status": "DECLINED",
+    "model_version": "gmsc-xgb-v1",
+    "risk_drivers": [
+      "High credit card & revolving line utilization",
+      "Past-due delinquency events (30-59 days late)",
+      "High debt-to-income ratio"
+    ]
+  }
+]
 ```
-
-**Sample Response Output (High Risk / Declined):**
-```json
-{
-  "pd": 0.354,
-  "status": "DECLINED",
-  "model_version": "gmsc-lgb-v1",
-  "risk_drivers": [
-    "High credit card & revolving line utilization",
-    "Past-due delinquency events (30-59 days late)",
-    "High debt-to-income ratio"
-  ]
-}
-```
-
-**Sample Response Output (Approved):**
-```json
-{
-  "pd": 0.021,
-  "status": "APPROVED",
-  "model_version": "gmsc-lgb-v1",
-  "risk_drivers": []
-}
-```
-
 
 ---
 
@@ -357,5 +338,6 @@ uv run python scripts/invoke_endpoint.py --pretty
 
 1. **Single Production Model over Complex Ensembles**: Benchmarking shows that model stacking yields negligible ROC-AUC gain over a single well-tuned LightGBM model. Serving a single model dramatically reduces endpoint latency, operational complexity, and monitoring overhead.
 2. **Mandatory Isotonic Calibration**: Uncalibrated gradient-boosting scores distort financial risk estimates. Enforcing isotonic calibration reduces Brier Score error by ~65.7%, ensuring accurate monetary Expected Loss calculations.
-3. **Decoupled Real-Time Inference vs. Adverse Action Explainability**: Keeping real-time serving lightweight (`pd` only) yields sub-20ms HTTP response times, while Adverse Action SHAP explanations are calculated on-demand for declined applicants.
+3. **Automated Microservice Explainability**: High-risk declined applications (`PD >= 0.10`) automatically calculate and attach SHAP-derived financial risk drivers directly in the HTTPS response payload. This eliminates cross-repository package dependencies in backend decisioning services.
 4. **Idempotent Infrastructure-as-Code Deployment**: The deployment script uses timestamped `EndpointConfig` resources and AWS waiters to handle zero-downtime updates, stuck creation states, and failed endpoint cleanups seamlessly in CI/CD.
+
