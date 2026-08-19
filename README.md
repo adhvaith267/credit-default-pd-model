@@ -140,13 +140,14 @@ To balance sub-20ms real-time API latency with regulatory compliance, SHAP is in
                  ┌──────────────────────────────┴──────────────────────────────┐
                  ▼                                                             ▼
 ┌─────────────────────────────────┐                           ┌──────────────────────────────────┐
-│   Layer 1: Offline Compliance   │                           │   Layer 2: On-Demand Adverse     │
-│       Audit (train.py)          │                           │     Action Notices (explain.py)  │
+│   Layer 1: Offline Compliance   │                           │   Layer 2: Real-Time In-Endpoint │
+│       Audit (train.py)          │                           │    Adverse Action (inference.py) │
 ├─────────────────────────────────┤                           ├──────────────────────────────────┤
-│ • Computes global feature rank  │                           │ • Triggered when applicant is    │
-│ • Saved to metrics.json         │                           │   declined or reviewed           │
-│ • Inspectable by Risk Audit     │                           │ • Computes exact local SHAP      │
-│   Committee before deployment   │                           │   drivers for Adverse Action     │
+│ • Computes global feature rank  │                           │ • Automatically triggered when   │
+│ • Saved to metrics.json         │                           │   PD >= RISK_THRESHOLD (0.10)   │
+│ • Inspectable by Risk Audit     │                           │   or when explain=true requested │
+│   Committee before deployment   │                           │ • Returns human-readable risk    │
+│                                 │                           │   drivers in JSON payload        │
 └─────────────────────────────────┘                           └──────────────────────────────────┘
 ```
 
@@ -160,8 +161,10 @@ To balance sub-20ms real-time API latency with regulatory compliance, SHAP is in
 | **4** | `HasDelinquency` | **0.2098** | Binary indicator of prior late payments |
 | **5** | `NumberOfOpenCreditLinesAndLoans` | **0.1120** | Total open credit accounts |
 
-### Real-Time Endpoint Payload Strategy
-The SageMaker real-time endpoint (`inference.py`) returns a lightweight response containing only `pd` and `model_version`. This choice ensures **sub-20ms serving latency** for high-throughput decisioning pipelines, while local Adverse Action SHAP explanations are computed on-demand via `explain.py` whenever a decline notification is generated.
+### Real-Time Endpoint Payload & Latency Strategy
+The SageMaker real-time endpoint (`inference.py`) dynamically computes and attaches human-readable SHAP Adverse Action risk drivers directly in the HTTPS response payload whenever an applicant is flagged as **DECLINED** (`PD >= RISK_THRESHOLD`, default `0.10`) or when `"explain": true` is explicitly passed in the request body.
+
+For low-risk **APPROVED** applications (`PD < 0.10` and `explain=false`), SHAP calculations are conditionally bypassed (`risk_drivers: []`), preserving **sub-20ms serving latency** for high-throughput decisioning. This decoupled microservice architecture satisfies Equal Credit Opportunity Act (ECOA) and FCRA Adverse Action notification mandates directly at the inference layer without incurring latency penalties on standard credit approvals.
 
 ---
 
