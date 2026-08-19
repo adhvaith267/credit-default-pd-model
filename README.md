@@ -203,17 +203,20 @@ Call create_endpoint()  Call update_endpoint()         Call update_endpoint()   
 ```
 financial-risk-analyst-ml/
 │
-├── src/financial_risk_analyst_ml/   # Core Modular Package (10 files)
-│   ├── config.py           # S3 paths, AWS region, and configuration constants
-│   ├── features.py         # Deterministic feature engineering
-│   ├── preprocessing.py    # Leakage-free preprocessing pipeline
-│   ├── models.py           # Model builders (Logistic Regression, XGBoost, LightGBM)
-│   ├── tuning.py           # Optuna hyperparameter optimization engine
-│   ├── evaluation.py       # ROC-AUC, PR-AUC, Brier score, and BSS metrics
-│   ├── calibration.py      # Platt & Isotonic probability calibration
-│   ├── explain.py          # SHAP explainability utilities
-│   ├── train.py            # Main training execution script (auto S3 dataset fetch)
-│   └── inference.py        # SageMaker real-time serving handler
+├── src/
+│   ├── financial_risk_analyst_ml/   # Core Modular Package (10 files)
+│   │   ├── config.py           # S3 paths, AWS region, and configuration constants
+│   │   ├── features.py         # Deterministic feature engineering
+│   │   ├── preprocessing.py    # Leakage-free preprocessing pipeline
+│   │   ├── models.py           # Model builders (Logistic Regression, XGBoost, LightGBM)
+│   │   ├── tuning.py           # Optuna hyperparameter optimization engine
+│   │   ├── evaluation.py       # ROC-AUC, PR-AUC, Brier score, and BSS metrics
+│   │   ├── calibration.py      # Platt & Isotonic probability calibration
+│   │   ├── explain.py          # SHAP explainability utilities
+│   │   ├── train.py            # Main training execution script (auto S3 dataset fetch)
+│   │   └── inference.py        # SageMaker real-time serving handler
+│   ├── inference.py            # SageMaker SKLearn container entry point wrapper
+│   └── train.py                # SageMaker SKLearn container entry point wrapper
 │
 ├── scripts/                         # Operational Entry Points
 │   ├── train_sagemaker.py  # Submit managed spot training job to AWS SageMaker
