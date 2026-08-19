@@ -178,3 +178,60 @@ def shap_summary_dict(
         }
         for _, row in importance_df.head(top_n).iterrows()
     ]
+
+
+FEATURE_DESCRIPTIONS = {
+    "RevolvingUtilizationOfUnsecuredLines": "High credit card & revolving line utilization",
+    "age": "Borrower age credit risk profile",
+    "NumberOfTime30-59DaysPastDueNotWorse": "Past-due delinquency events (30-59 days late)",
+    "DebtRatio": "High debt-to-income ratio",
+    "MonthlyIncome": "Low monthly income level",
+    "NumberOfOpenCreditLinesAndLoans": "High number of open credit lines",
+    "NumberOfTimes90DaysLate": "Severe past-due delinquency (90+ days late)",
+    "NumberRealEstateLoansOrLines": "Multiple real estate loans or lines",
+    "NumberOfTime60-89DaysPastDueNotWorse": "Past-due delinquency events (60-89 days late)",
+    "NumberOfDependents": "Number of financial dependents",
+    "TotalDelinquencyCount": "Combined historical delinquency events",
+    "HasDelinquency": "History of past-due payments",
+    "SevereDelinquency": "History of severe delinquency (90+ days late)",
+}
+
+
+def get_risk_drivers(
+    model: TreeModel,
+    x: np.ndarray | pd.Series,
+    feature_names: list[str] | None = None,
+    top_n: int = 3,
+) -> list[str]:
+    """
+    Generate human-readable financial risk drivers (Adverse Action reasons)
+    for a borrower prediction based on positive SHAP values.
+
+    Parameters
+    ----------
+    model:
+        Fitted TreeModel (XGBClassifier or LGBMClassifier).
+    x:
+        Single borrower feature vector (1-D).
+    feature_names:
+        Feature column names.
+    top_n:
+        Maximum number of primary risk drivers to return.
+
+    Returns
+    -------
+    List of human-readable explanation strings describing the top risk drivers.
+    """
+    df = explain_single_borrower(model, x, feature_names)
+    
+    # Filter features that increase risk (shap_value > 0)
+    risk_df = df[df["shap_value"] > 0].sort_values("shap_value", ascending=False)
+    
+    drivers = []
+    for _, row in risk_df.head(top_n).iterrows():
+        feat = row["feature"]
+        desc = FEATURE_DESCRIPTIONS.get(feat, feat.replace("_", " "))
+        drivers.append(desc)
+
+    return drivers
+

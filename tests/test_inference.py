@@ -100,17 +100,21 @@ class TestPredictFn:
             "calibrator": calibrator,
         }
 
-    def test_returns_numpy_array(self):
+    def test_returns_list_of_dicts(self):
         df = pd.DataFrame([VALID_BORROWER])
         artifacts = self._make_model_artifacts(pd_value=0.083)
         result = predict_fn(df, artifacts)
-        assert isinstance(result, np.ndarray)
+        assert isinstance(result, list)
+        assert len(result) == 1
+        assert "pd" in result[0]
+        assert "status" in result[0]
+        assert "risk_drivers" in result[0]
 
     def test_single_borrower_returns_one_value(self):
         df = pd.DataFrame([VALID_BORROWER])
         artifacts = self._make_model_artifacts(pd_value=0.083)
         result = predict_fn(df, artifacts)
-        assert result.shape == (1,)
+        assert len(result) == 1
 
     def test_pd_value_is_clipped_to_0_1(self):
         df = pd.DataFrame([VALID_BORROWER])
@@ -118,7 +122,7 @@ class TestPredictFn:
         # Override calibrator to return out-of-range value.
         artifacts["calibrator"].predict_proba.return_value = np.array([1.5])
         result = predict_fn(df, artifacts)
-        assert result[0] <= 1.0
+        assert result[0]["pd"] <= 1.0
 
     def test_preprocessor_is_called(self):
         df = pd.DataFrame([VALID_BORROWER])
@@ -140,45 +144,51 @@ class TestPredictFn:
 class TestOutputFn:
 
     def test_single_result_unwrapped(self):
-        preds = np.array([0.083])
+        preds = [{"pd": 0.083, "status": "APPROVED", "model_version": "gmsc-xgb-v1", "risk_drivers": []}]
         body, content_type = output_fn(preds, "application/json")
         data = json.loads(body)
         # Single borrower: should be a dict, not a list.
         assert isinstance(data, dict)
         assert "pd" in data
+        assert "status" in data
         assert "model_version" in data
+        assert "risk_drivers" in data
 
     def test_pd_value_is_correct(self):
-        preds = np.array([0.083])
+        preds = [{"pd": 0.083, "status": "APPROVED", "model_version": "gmsc-xgb-v1", "risk_drivers": []}]
         body, _ = output_fn(preds, "application/json")
         data = json.loads(body)
         assert abs(data["pd"] - 0.083) < 1e-5
 
     def test_batch_result_is_list(self):
-        preds = np.array([0.083, 0.021])
+        preds = [
+            {"pd": 0.083, "status": "APPROVED", "model_version": "gmsc-xgb-v1", "risk_drivers": []},
+            {"pd": 0.354, "status": "DECLINED", "model_version": "gmsc-xgb-v1", "risk_drivers": ["High utilization"]},
+        ]
         body, content_type = output_fn(preds, "application/json")
         data = json.loads(body)
         assert isinstance(data, list)
         assert len(data) == 2
 
     def test_content_type_is_json(self):
-        preds = np.array([0.05])
+        preds = [{"pd": 0.05, "status": "APPROVED", "model_version": "gmsc-xgb-v1", "risk_drivers": []}]
         _, content_type = output_fn(preds, "application/json")
         assert content_type == "application/json"
 
     def test_unsupported_accept_raises(self):
-        preds = np.array([0.05])
+        preds = [{"pd": 0.05, "status": "APPROVED", "model_version": "gmsc-xgb-v1", "risk_drivers": []}]
         with pytest.raises(ValueError, match="Unsupported accept type"):
             output_fn(preds, "text/csv")
 
     def test_wildcard_accept_works(self):
-        preds = np.array([0.05])
+        preds = [{"pd": 0.05, "status": "APPROVED", "model_version": "gmsc-xgb-v1", "risk_drivers": []}]
         body, content_type = output_fn(preds, "*/*")
         assert content_type == "application/json"
 
     def test_pd_is_rounded(self):
-        preds = np.array([0.123456789])
+        preds = [{"pd": 0.123457, "status": "DECLINED", "model_version": "gmsc-xgb-v1", "risk_drivers": []}]
         body, _ = output_fn(preds, "application/json")
         data = json.loads(body)
         # Should be rounded to 6 decimal places.
         assert len(str(data["pd"]).split(".")[-1]) <= 6
+

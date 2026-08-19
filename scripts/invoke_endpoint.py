@@ -17,10 +17,19 @@ Usage:
     uv run python scripts/invoke_endpoint.py --pretty
 
 Output example (single borrower):
-    {"pd": 0.083, "model_version": "gmsc-xgb-v1"}
+    {"pd": 0.083, "status": "APPROVED", "model_version": "gmsc-xgb-v1", "risk_drivers": []}
 
-Output example (batch):
-    [{"pd": 0.083, "model_version": "gmsc-xgb-v1"}, ...]
+Output example (declined borrower):
+    {
+      "pd": 0.354,
+      "status": "DECLINED",
+      "model_version": "gmsc-xgb-v1",
+      "risk_drivers": [
+        "High credit card & revolving line utilization",
+        "Past-due delinquency events (30-59 days late)",
+        "High debt-to-income ratio"
+      ]
+    }
 """
 
 from __future__ import annotations
@@ -170,7 +179,11 @@ def main() -> None:
 
     if isinstance(result, dict) and "pd" in result:
         pd_value = result["pd"]
-        logger.info("PD = %.4f  (%.2f%%)", pd_value, pd_value * 100)
+        status = result.get("status", "UNKNOWN")
+        drivers = result.get("risk_drivers", [])
+        logger.info("PD = %.4f (%.2f%%) | Status = %s", pd_value, pd_value * 100, status)
+        if drivers:
+            logger.info("Primary Risk Drivers: %s", drivers)
 
 
 if __name__ == "__main__":

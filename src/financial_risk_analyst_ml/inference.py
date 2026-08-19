@@ -95,8 +95,13 @@ except ImportError:
 
 try:
     from financial_risk_analyst_ml.calibration import calibrate_probabilities
+    from financial_risk_analyst_ml.explain import get_risk_drivers
 except ImportError:
     from calibration import calibrate_probabilities
+    try:
+        from explain import get_risk_drivers
+    except ImportError:
+        get_risk_drivers = None
 
 
 logger = logging.getLogger(__name__)
@@ -104,6 +109,7 @@ logger = logging.getLogger(__name__)
 # Version tag embedded in every response so the backend can track
 # which model version produced each PD.
 MODEL_VERSION = os.environ.get("MODEL_VERSION", "gmsc-xgb-v1")
+RISK_THRESHOLD = float(os.environ.get("RISK_THRESHOLD", "0.10"))
 
 # Expected raw input columns (before feature engineering).
 RAW_INPUT_COLUMNS = [
@@ -205,15 +211,17 @@ def input_fn(request_body: str, content_type: str) -> pd.DataFrame:
 def predict_fn(
     input_data: pd.DataFrame,
     model_artifacts: dict,
-) -> np.ndarray:
+) -> list[dict] | np.ndarray:
     """
-    Run the full inference pipeline and return calibrated PD probabilities.
+    Run the full inference pipeline and return calibrated PD probabilities
+    and SHAP risk drivers for high-risk or requested borrowers.
 
     Steps:
         1. Preprocessing (cleaning + feature engineering + imputation +
            clipping + scaling), using training-fitted parameters.
         2. Model forward pass.
         3. Probability calibration.
+        4. SHAP Risk Driver calculation (for declined/requested borrowers).
 
     Parameters
     ----------
@@ -224,12 +232,15 @@ def predict_fn(
 
     Returns
     -------
-    1-D numpy array of calibrated PD values (one per borrower).
+    List of dicts per borrower (or 1D array of PD values).
     """
 
     preprocessor = model_artifacts["preprocessor"]
     model = model_artifacts["model"]
     calibrator = model_artifacts["calibrator"]
+
+    # Extract optional 'explain' request flag
+    explain_requested = "explain" in input_data.columns and bool(input_data["explain"].iloc[0])
 
     # Preprocessing (uses training-fitted parameters — no leakage at inference).
     X = preprocessor.transform(input_data)
@@ -240,11 +251,34 @@ def predict_fn(
     # Calibrated PD.
     calibrated_probs = calibrate_probabilities(calibrator, raw_probs)
 
-    return calibrated_probs
+    # Ensure output probabilities are bounded strictly to [0.0, 1.0]
+    calibrated_probs = np.clip(calibrated_probs, 0.0, 1.0)
+
+    results = []
+    for i in range(len(calibrated_probs)):
+        pd_val = float(calibrated_probs[i])
+        is_declined = pd_val >= RISK_THRESHOLD
+        
+        risk_drivers = []
+        if (is_declined or explain_requested) and get_risk_drivers is not None:
+            try:
+                risk_drivers = get_risk_drivers(model, X[i], top_n=3)
+            except Exception as e:
+                logger.warning("Could not generate SHAP risk drivers: %s", e)
+                risk_drivers = []
+
+        results.append({
+            "pd": round(pd_val, 6),
+            "status": "DECLINED" if is_declined else "APPROVED",
+            "model_version": MODEL_VERSION,
+            "risk_drivers": risk_drivers,
+        })
+
+    return results
 
 
 def output_fn(
-    prediction: np.ndarray,
+    prediction: list[dict] | np.ndarray,
     accept: str,
 ) -> tuple[str, str]:
     """
@@ -253,7 +287,7 @@ def output_fn(
     Parameters
     ----------
     prediction:
-        Calibrated PD array from predict_fn.
+        List of borrower result dicts (or PD array) from predict_fn.
     accept:
         Requested response MIME type (should be 'application/json').
 
@@ -268,13 +302,18 @@ def output_fn(
             "Expected 'application/json'."
         )
 
-    results = [
-        {
-            "pd": round(float(pd_value), 6),
-            "model_version": MODEL_VERSION,
-        }
-        for pd_value in prediction
-    ]
+    if isinstance(prediction, np.ndarray):
+        results = [
+            {
+                "pd": round(float(pd_value), 6),
+                "status": "DECLINED" if float(pd_value) >= RISK_THRESHOLD else "APPROVED",
+                "model_version": MODEL_VERSION,
+                "risk_drivers": [],
+            }
+            for pd_value in prediction
+        ]
+    else:
+        results = prediction
 
     # Unwrap single-borrower responses for convenience.
     if len(results) == 1:
@@ -283,3 +322,4 @@ def output_fn(
         body = json.dumps(results)
 
     return body, "application/json"
+

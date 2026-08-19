@@ -326,13 +326,30 @@ uv run python scripts/invoke_endpoint.py --pretty
 }
 ```
 
-**Sample Response Output:**
+**Sample Response Output (High Risk / Declined):**
 ```json
 {
-  "pd": 0.083,
-  "model_version": "gmsc-lgb-v1"
+  "pd": 0.354,
+  "status": "DECLINED",
+  "model_version": "gmsc-lgb-v1",
+  "risk_drivers": [
+    "High credit card & revolving line utilization",
+    "Past-due delinquency events (30-59 days late)",
+    "High debt-to-income ratio"
+  ]
 }
 ```
+
+**Sample Response Output (Approved):**
+```json
+{
+  "pd": 0.021,
+  "status": "APPROVED",
+  "model_version": "gmsc-lgb-v1",
+  "risk_drivers": []
+}
+```
+
 
 ---
 
